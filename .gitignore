@@ -1,0 +1,74 @@
+ 
+# Django specific
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.git
+.mypy_cache
+.pytest_cache
+.hypothesis
+
+# Django settings and database
+*.sqlite3
+db.sqlite3
+media/
+staticfiles/
+
+# Environment variables (NEVER commit these!)
+.env
+.env.local
+.env.production
+.env.staging
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Python virtual environment
+bin/
+include/
+lib/
+lib64/
+share/
+Scripts/
+
+# Django migrations (some teams ignore these)
+# */migrations/*.py
+# !*/migrations/__init__.py
+
+# Static files
+/static/
+/staticfiles/
+
+# Media files
+/media/
+
+# Secret key and sensitive settings
+local_settings.py
+secrets.jsons
