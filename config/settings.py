@@ -11,7 +11,7 @@ https://docs.djangoproject.com/en/5.2/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
-
+import os
 from pathlib import Path
 from decouple import config
 
@@ -204,3 +204,16 @@ if DEBUG:
             },
         },
     }
+
+    # Email configuration with AWS SES
+EMAIL_BACKEND = 'django_ses.SESBackend'
+
+# AWS credentials (we'll use environment variables for security)
+AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
+AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
+AWS_SES_REGION_NAME = os.getenv('AWS_SES_REGION', 'us-east-1')
+AWS_SES_REGION_ENDPOINT = f'email.{AWS_SES_REGION_NAME}.amazonaws.com'
+
+# Email settings
+DEFAULT_FROM_EMAIL = 'noreply@connectify.com'  # We'll verify this domain
+SERVER_EMAIL = DEFAULT_FROM_EMAIL

@@ -5,6 +5,9 @@ from rest_framework.response import Response
 from django.contrib.auth import authenticate
 from .serializers import UserRegistrationSerializer
 from .models import User
+from .models import EmailOTP
+from .email_service import generate_otp, send_otp_email
+from django.utils import timezone
 
 @api_view(['POST'])
 def register_user(request):
@@ -172,3 +175,92 @@ def check_email_availability(request):
         'available': True,
         'message': 'Email is available!'
     }, status=status.HTTP_200_OK)
+
+@api_view(['POST'])
+def send_otp(request):
+    """Send real OTP email using AWS SES"""
+    email = request.data.get('email', '').strip().lower()
+    
+    if not email:
+        return Response({
+            'success': False,
+            'message': 'Email is required'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        # Generate 6-digit OTP
+        otp_code = generate_otp()
+        
+        # Save OTP to database
+        EmailOTP.objects.create(
+            email=email,
+            otp_code=otp_code
+        )
+        
+        # Send email via AWS SES
+        email_sent = send_otp_email(email, otp_code)
+        
+        if email_sent:
+            return Response({
+                'success': True,
+                'message': f'OTP sent to {email}'
+            }, status=status.HTTP_200_OK)
+        else:
+            return Response({
+                'success': False,
+                'message': 'Failed to send email. Please try again.'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+    except Exception as e:
+        return Response({
+            'success': False,
+            'message': f'Error sending OTP: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+def verify_otp(request):
+    """Verify OTP code from database"""
+    email = request.data.get('email', '').strip().lower()
+    otp_code = request.data.get('otp_code', '').strip()
+    
+    if not email or not otp_code:
+        return Response({
+            'success': False,
+            'message': 'Email and OTP code are required'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        # Find the most recent unused OTP for this email
+        otp_record = EmailOTP.objects.filter(
+            email=email,
+            otp_code=otp_code,
+            is_used=False
+        ).first()
+        
+        if not otp_record:
+            return Response({
+                'success': False,
+                'message': 'Invalid OTP code'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        if otp_record.is_expired():
+            return Response({
+                'success': False,
+                'message': 'OTP has expired. Please request a new one.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Mark OTP as used
+        otp_record.is_used = True
+        otp_record.save()
+        
+        return Response({
+            'success': True,
+            'message': 'OTP verified successfully!'
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({
+            'success': False,
+            'message': f'Error verifying OTP: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
