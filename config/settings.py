@@ -205,15 +205,19 @@ if DEBUG:
         },
     }
 
-    # Email configuration with AWS SES
+
+# ✅ AWS SES Configuration - FIXED
 EMAIL_BACKEND = 'django_ses.SESBackend'
 
-# AWS credentials (we'll use environment variables for security)
-AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
-AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
-AWS_SES_REGION_NAME = os.getenv('AWS_SES_REGION', 'us-east-1')
-AWS_SES_REGION_ENDPOINT = f'email.{AWS_SES_REGION_NAME}.amazonaws.com'
+# config/settings.py - SMTP BACKEND
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'email-smtp.eu-north-1.amazonaws.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = config('AWS_ACCESS_KEY_ID')      
+EMAIL_HOST_PASSWORD = config('AWS_SECRET_ACCESS_KEY')  
+DEFAULT_FROM_EMAIL = 'rob063838@gmail.com'
 
 # Email settings
-DEFAULT_FROM_EMAIL = 'noreply@connectify.com'  # We'll verify this domain
+DEFAULT_FROM_EMAIL = 'rob063838@gmail.com'
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
