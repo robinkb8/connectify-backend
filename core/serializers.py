@@ -131,43 +131,36 @@ class PostSerializer(serializers.ModelSerializer):
         else:
             return obj.created_at.strftime("%b %d")
 
-
 class PostCreateSerializer(serializers.ModelSerializer):
     """
-    🎓 LEARNING: Separate Serializer for Creation
-    
-    Sometimes you want different fields for creating vs viewing
-    This serializer handles POST requests to create new posts
+    Serializer for creating posts with image upload
     """
     
     class Meta:
         model = Post
         fields = ['content', 'image']
+        extra_kwargs = {
+            'content': {'required': False, 'allow_blank': True},
+            'image': {'required': False, 'allow_null': True},
+        }
     
-    def validate_content(self, value):
-        """
-        🎓 LEARNING: Custom Validation
+    def validate(self, data):
+        """Ensure either content or image is provided"""
+        content = data.get('content', '').strip()
+        image = data.get('image')
         
-        Add custom validation rules for post content
-        """
-        if len(value.strip()) < 1:
-            raise serializers.ValidationError("Post content cannot be empty.")
+        if not content and not image:
+            raise serializers.ValidationError("Please provide either content or an image.")
         
-        if len(value) > 2200:
-            raise serializers.ValidationError("Post content is too long (max 2200 characters).")
-        
-        return value.strip()
+        print(f"🔍 Validating data: content='{content}', image={image}")
+        return data
     
     def create(self, validated_data):
-        """
-        🎓 LEARNING: Custom Create Method
-        
-        Override create to automatically set the author
-        from the authenticated user making the request
-        """
-        request = self.context.get('request')
-        validated_data['author'] = request.user
-        return super().create(validated_data)
+        """Create post with proper logging"""
+        print(f"🔍 Creating post with: {validated_data}")
+        post = super().create(validated_data)
+        print(f"✅ Post created with ID: {post.id}")
+        return post
 
 
 class CommentSerializer(serializers.ModelSerializer):

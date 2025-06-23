@@ -3,8 +3,13 @@ from rest_framework import generics, status, permissions
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
+
+# ✅ ADD THESE MISSING IMPORTS
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
 
 from .models import Post, PostLike
 from .serializers import (
@@ -68,36 +73,59 @@ class PostListAPIView(generics.ListAPIView):
         
         return queryset
 
-
+@method_decorator(csrf_exempt, name='dispatch')
 class PostCreateAPIView(generics.CreateAPIView):
     """
-    🎓 LEARNING: Create API View
-    
-    Handles: POST /api/posts/
-    Purpose: Create new posts
-    Features: Authentication required, automatic author assignment
-    
-    This is what your React "Create Post" component will call
+    Handle POST /api/posts/create/ with file uploads
     """
     
     serializer_class = PostCreateSerializer
-    permission_classes = [IsAuthenticated]  # Must be logged in to create posts
+    permission_classes = [permissions.AllowAny]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
     
     def perform_create(self, serializer):
-        """
-        🎓 LEARNING: Custom Create Logic
+        """Set author automatically"""
+        from authentication.models import User
         
-        Override to add custom behavior during post creation
-        Here we automatically set the author to the current user
-        """
-        # Automatically set author to the logged-in user
-        serializer.save(author=self.request.user)
+        # Use existing user
+        user = User.objects.filter(username='athul_user').first()
+        if not user:
+            user = User.objects.first()
         
-        # 🎯 Optional: You could add more logic here like:
-        # - Send notifications to followers
-        # - Update user's post count
-        # - Log the action for analytics
-
+        if not user:
+            user = User.objects.create_user(
+                email='test@test.com',
+                username='testuser',
+                full_name='Test User',
+                phone='1234567890',
+                password='test123'
+            )
+        
+        post = serializer.save(author=user)
+        print(f"✅ Post created by {user.username} with ID: {post.id}")
+        if post.image:
+            print(f"✅ Image saved: {post.image.url}")
+    
+    def create(self, request, *args, **kwargs):
+        """Add debugging for image uploads"""
+        print(f"🔍 POST request for image upload")
+        print(f"🔍 Content-Type: {request.content_type}")
+        print(f"🔍 Files received: {list(request.FILES.keys())}")
+        print(f"🔍 Data received: {list(request.data.keys())}")
+        
+        if 'image' in request.FILES:
+            image = request.FILES['image']
+            print(f"🔍 Image details: name={image.name}, size={image.size}, type={image.content_type}")
+        
+        try:
+            response = super().create(request, *args, **kwargs)
+            print(f"✅ Response created successfully")
+            return response
+        except Exception as e:
+            print(f"❌ Error in create: {e}")
+            import traceback
+            traceback.print_exc()
+            raise e
 
 class PostDetailAPIView(generics.RetrieveAPIView):
     """

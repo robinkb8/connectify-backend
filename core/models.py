@@ -54,10 +54,12 @@ class Post(models.Model):
         max_length=2200,
         validators=[MinLengthValidator(1)]
     )
+     
     image = models.ImageField(
         upload_to='posts/images/%Y/%m/%d/',
         blank=True,
-        null=True
+        null=True,
+        max_length=500
     )
     
     # Timestamps
