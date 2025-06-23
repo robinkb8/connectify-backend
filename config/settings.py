@@ -221,3 +221,17 @@ DEFAULT_FROM_EMAIL = 'rob063838@gmail.com'
 # Email settings
 DEFAULT_FROM_EMAIL = 'rob063838@gmail.com'
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
+
+
+# Media files (user uploads like post images, avatars)
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+# Static files (CSS, JavaScript, admin files)  
+STATIC_URL = '/static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
+# Additional static files directories (for development)
+STATICFILES_DIRS = [
+    os.path.join(BASE_DIR, 'static'),
+] if os.path.exists(os.path.join(BASE_DIR, 'static')) else []

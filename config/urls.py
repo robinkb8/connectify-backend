@@ -8,4 +8,6 @@ urlpatterns = [
     
     # API Endpoints - All authentication routes
     path('api/auth/', include('authentication.urls')),
+
+    path('api/', include('core.urls')),
 ]
