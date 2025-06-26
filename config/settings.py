@@ -117,8 +117,15 @@ DATABASES = {
         'PASSWORD': config('DB_PASSWORD', default='N4qhtnqd123'),
         'HOST': config('DB_HOST', default='localhost'),
         'PORT': config('DB_PORT', default='5432'),
+        'OPTIONS': {
+            'connect_timeout': 60,           # Increase timeout to 60 seconds
+            'application_name': 'connectify',
+            'sslmode': 'prefer',             # Better SSL handling for RDS
+        },
+        'CONN_MAX_AGE': 600,                # Keep connections alive for 10 minutes
     }
 }
+
 # =====================================================
 # DJANGO REST FRAMEWORK CONFIGURATION
 # =====================================================

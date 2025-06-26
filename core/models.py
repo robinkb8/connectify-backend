@@ -1,4 +1,4 @@
-# core/models.py
+# core/models.py - CLEAN VERSION WITHOUT STORIES
 from django.db import models
 from django.conf import settings
 from django.utils import timezone
@@ -163,64 +163,6 @@ class Comment(models.Model):
         return f"Comment by {self.author.username} on post {self.post.id}"
 
 
-class Story(models.Model):
-    """Instagram-style stories that expire after 24 hours"""
-    author = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name='stories'
-    )
-    image = models.ImageField(upload_to='stories/images/%Y/%m/%d/')
-    caption = models.CharField(max_length=200, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    expires_at = models.DateTimeField()
-    total_views = models.IntegerField(default=0)
-    
-    class Meta:
-        db_table = 'stories'
-        ordering = ['-created_at']
-        indexes = [
-            models.Index(fields=['expires_at']),
-            models.Index(fields=['author', '-created_at']),
-        ]
-    
-    def save(self, *args, **kwargs):
-        # Set expiration to 24 hours if not provided
-        if not self.expires_at:
-            self.expires_at = timezone.now() + timedelta(hours=24)
-        super().save(*args, **kwargs)
-    
-    def is_expired(self):
-        return timezone.now() > self.expires_at
-    
-    def __str__(self):
-        return f"Story by {self.author.username} - {self.created_at}"
-
-
-class StoryView(models.Model):
-    """Track who viewed which stories"""
-    story = models.ForeignKey(
-        Story,
-        on_delete=models.CASCADE,
-        related_name='views'
-    )
-    viewer = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE
-    )
-    viewed_at = models.DateTimeField(auto_now_add=True)
-    
-    class Meta:
-        db_table = 'story_views'
-        unique_together = ['story', 'viewer']
-        indexes = [
-            models.Index(fields=['story', 'viewed_at']),
-        ]
-    
-    def __str__(self):
-        return f"{self.viewer.username} viewed story {self.story.id}"
-
-
 class Follow(models.Model):
     """User following relationships"""
     follower = models.ForeignKey(
@@ -273,47 +215,27 @@ from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 
 @receiver(post_save, sender=PostLike)
+def update_post_likes_on_like(sender, instance, created, **kwargs):
+    """Update post likes count when a like is added"""
+    if created:
+        instance.post.total_likes = instance.post.likes.count()
+        instance.post.save(update_fields=['total_likes'])
+
 @receiver(post_delete, sender=PostLike)
-def update_post_like_count(sender, instance, **kwargs):
-    """Update post like count when likes change"""
-    post = instance.post
-    post.total_likes = post.likes.count()
-    post.save(update_fields=['total_likes'])
+def update_post_likes_on_unlike(sender, instance, **kwargs):
+    """Update post likes count when a like is removed"""
+    instance.post.total_likes = instance.post.likes.count()
+    instance.post.save(update_fields=['total_likes'])
 
 @receiver(post_save, sender=Comment)
+def update_post_comments_on_add(sender, instance, created, **kwargs):
+    """Update post comments count when a comment is added"""
+    if created:
+        instance.post.total_comments = instance.post.comments.count()
+        instance.post.save(update_fields=['total_comments'])
+
 @receiver(post_delete, sender=Comment)
-def update_post_comment_count(sender, instance, **kwargs):
-    """Update post comment count when comments change"""
-    post = instance.post
-    post.total_comments = post.comments.count()
-    post.save(update_fields=['total_comments'])
-
-@receiver(post_save, sender=PostShare)
-@receiver(post_delete, sender=PostShare)
-def update_post_share_count(sender, instance, **kwargs):
-    """Update post share count when shares change"""
-    post = instance.post
-    post.total_shares = post.shares.count()
-    post.save(update_fields=['total_shares'])
-
-@receiver(post_save, sender=Follow)
-@receiver(post_delete, sender=Follow)
-def update_follow_counts(sender, instance, **kwargs):
-    """Update follower/following counts when follows change"""
-    # Update follower's following count
-    follower_profile, _ = UserProfile.objects.get_or_create(user=instance.follower)
-    follower_profile.following_count = instance.follower.following.count()
-    follower_profile.save(update_fields=['following_count'])
-    
-    # Update following's follower count
-    following_profile, _ = UserProfile.objects.get_or_create(user=instance.following)
-    following_profile.followers_count = instance.following.followers.count()
-    following_profile.save(update_fields=['followers_count'])
-
-@receiver(post_save, sender=Post)
-@receiver(post_delete, sender=Post)
-def update_user_posts_count(sender, instance, **kwargs):
-    """Update user's posts count when posts change"""
-    profile, _ = UserProfile.objects.get_or_create(user=instance.author)
-    profile.posts_count = instance.author.posts.filter(is_active=True).count()
-    profile.save(update_fields=['posts_count'])
+def update_post_comments_on_delete(sender, instance, **kwargs):
+    """Update post comments count when a comment is deleted"""
+    instance.post.total_comments = instance.post.comments.count()
+    instance.post.save(update_fields=['total_comments'])
