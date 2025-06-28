@@ -214,7 +214,7 @@ if DEBUG:
 
 
 # ✅ AWS SES Configuration - FIXED
-EMAIL_BACKEND = 'django_ses.SESBackend'
+#EMAIL_BACKEND = 'django_ses.SESBackend'
 
 # config/settings.py - SMTP BACKEND
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'

@@ -9,6 +9,30 @@ from .models import EmailOTP
 from .email_service import generate_otp, send_otp_email
 from django.utils import timezone
 
+
+# In views.py
+@api_view(['POST'])
+def check_email_exists(request):
+    """
+    Check if user with this email exists (used for Google Sign-In)
+    """
+    email = request.data.get('email', '').strip().lower()
+
+    if not email:
+        return Response({
+            'available': False,
+            'exists': False,
+            'message': 'Email is required'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    user_exists = User.objects.filter(email=email).exists()
+
+    return Response({
+        'available': not user_exists,  # ✅ If user exists → available = False
+        'exists': user_exists,
+        'message': 'User found' if user_exists else 'User not found'
+    }, status=status.HTTP_200_OK)
+
 @api_view(['POST'])
 def register_user(request):
     """
