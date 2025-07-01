@@ -1,4 +1,3 @@
-# core/views.py - CLEAN VERSION WITHOUT STORIES
 from rest_framework import generics, status, permissions
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
@@ -6,28 +5,21 @@ from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnl
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
+from django.utils import timezone
+from datetime import timedelta
 
-from .models import Post, PostLike, Comment  # REMOVED Story, StoryView
+from .models import Post, PostLike, Comment
 from .serializers import (
     PostSerializer, 
     PostCreateSerializer, 
     PostDetailSerializer,
     CommentSerializer,
     CommentCreateSerializer
-    # REMOVED Story serializers
 )
 
-from django.utils import timezone
-from datetime import timedelta
-
-# ✅ POSTS API ENDPOINTS
 
 class PostListAPIView(generics.ListAPIView):
-    """
-    Handles: GET /api/posts/
-    Purpose: Return posts for the home feed
-    """
-    
+    """GET /api/posts/ - Return posts for the home feed"""
     serializer_class = PostSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
     
@@ -43,49 +35,22 @@ class PostListAPIView(generics.ListAPIView):
             'comments'
         ).order_by('-created_at')
         
-        print(f"🔍 Found {queryset.count()} active posts")
         return queryset
 
 
 class PostCreateAPIView(generics.CreateAPIView):
-    """
-    Handles: POST /api/posts/create/
-    Purpose: Create new post with optional image upload
-    """
-    
+    """POST /api/posts/create/ - Create new post with optional image upload"""
     serializer_class = PostCreateSerializer
-    permission_classes = [permissions.AllowAny]  # TODO: Change to IsAuthenticated
+    permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
     
     def perform_create(self, serializer):
         """Set author when creating post"""
-        from authentication.models import User
-        
-        # TODO: Use request.user when authentication is implemented
-        # For now, use existing user
-        user = User.objects.filter(username='athul_user').first()
-        if not user:
-            user = User.objects.first()
-        
-        if not user:
-            user = User.objects.create_user(
-                email='test@test.com',
-                username='testuser',
-                full_name='Test User',
-                phone='1234567890',
-                password='test123'
-            )
-        
-        post = serializer.save(author=user)
-        print(f"✅ Post created by {user.username} with ID: {post.id}")
+        post = serializer.save(author=self.request.user)
 
 
 class PostDetailAPIView(generics.RetrieveAPIView):
-    """
-    Handles: GET /api/posts/1/
-    Purpose: Get single post with comments and details
-    """
-    
+    """GET /api/posts/1/ - Get single post with comments and details"""
     serializer_class = PostDetailSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
     
@@ -102,11 +67,7 @@ class PostDetailAPIView(generics.RetrieveAPIView):
 
 
 class UserPostsAPIView(generics.ListAPIView):
-    """
-    Handles: GET /api/users/1/posts/
-    Purpose: Get all posts by a specific user
-    """
-    
+    """GET /api/users/1/posts/ - Get all posts by a specific user"""
     serializer_class = PostSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
     
@@ -121,32 +82,15 @@ class UserPostsAPIView(generics.ListAPIView):
             'author__profile'
         ).order_by('-created_at')
 
-# ✅ LIKE SYSTEM ENDPOINTS
 
 @api_view(['POST', 'DELETE'])
-@permission_classes([permissions.AllowAny])  # TODO: Change to IsAuthenticated
+@permission_classes([IsAuthenticated])
 def post_like_toggle(request, post_id):
-    """
-    Handles: POST/DELETE /api/posts/1/like/
-    Purpose: Like or unlike a post
-    """
-    
+    """POST/DELETE /api/posts/1/like/ - Like or unlike a post"""
     post = get_object_or_404(Post, id=post_id)
-    
-    # TODO: Use request.user when authentication is implemented
-    from authentication.models import User
-    user = User.objects.filter(username='athul_user').first()
-    if not user:
-        user = User.objects.first()
-    
-    if not user:
-        return Response({
-            'success': False,
-            'message': 'User not found'
-        }, status=status.HTTP_400_BAD_REQUEST)
+    user = request.user
     
     if request.method == 'POST':
-        # Like the post
         like, created = PostLike.objects.get_or_create(
             user=user,
             post=post
@@ -166,7 +110,6 @@ def post_like_toggle(request, post_id):
             }, status=status.HTTP_400_BAD_REQUEST)
     
     elif request.method == 'DELETE':
-        # Unlike the post
         try:
             like = PostLike.objects.get(user=user, post=post)
             like.delete()
@@ -187,11 +130,7 @@ def post_like_toggle(request, post_id):
 @api_view(['GET'])
 @permission_classes([IsAuthenticatedOrReadOnly])
 def post_stats(request, post_id):
-    """
-    Handles: GET /api/posts/1/stats/
-    Purpose: Get detailed post statistics
-    """
-    
+    """GET /api/posts/1/stats/ - Get detailed post statistics"""
     post = get_object_or_404(Post, id=post_id)
     
     return Response({
@@ -203,14 +142,9 @@ def post_stats(request, post_id):
         'is_active': post.is_active
     })
 
-# ✅ COMMENT SYSTEM ENDPOINTS
 
 class PostCommentsListCreateAPIView(generics.ListCreateAPIView):
-    """
-    Handles: GET/POST /api/posts/1/comments/
-    Purpose: List comments for a post or add new comment
-    """
-    
+    """GET/POST /api/posts/1/comments/ - List comments for a post or add new comment"""
     serializer_class = CommentSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
     
@@ -232,28 +166,15 @@ class PostCommentsListCreateAPIView(generics.ListCreateAPIView):
     
     def perform_create(self, serializer):
         """Set author and post when creating comment"""
-        from authentication.models import User
-        
-        # TODO: Use request.user when authentication is implemented
-        user = User.objects.filter(username='athul_user').first()
-        if not user:
-            user = User.objects.first()
-        
         post_id = self.kwargs['post_id']
         post = get_object_or_404(Post, id=post_id)
-        
-        comment = serializer.save(author=user, post=post)
-        print(f"✅ Comment created by {user.username} on post {post.id}")
+        comment = serializer.save(author=self.request.user, post=post)
 
 
 class CommentDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
-    """
-    Handles: GET/PUT/DELETE /api/comments/1/
-    Purpose: Get, update, or delete specific comment
-    """
-    
+    """GET/PUT/DELETE /api/comments/1/ - Get, update, or delete specific comment"""
     serializer_class = CommentSerializer
-    permission_classes = [IsAuthenticatedOrReadOnly]
+    permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
         """Get comment with optimized queries"""
@@ -271,10 +192,19 @@ class CommentDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
     
     def perform_update(self, serializer):
         """Update comment (only by author)"""
-        # TODO: Add permission check for author only
+        comment = self.get_object()
+        if comment.author != self.request.user:
+            return Response({
+                'success': False,
+                'message': 'You can only edit your own comments'
+            }, status=status.HTTP_403_FORBIDDEN)
         serializer.save()
     
     def perform_destroy(self, instance):
         """Delete comment (only by author)"""
-        # TODO: Add permission check for author only
+        if instance.author != self.request.user:
+            return Response({
+                'success': False,
+                'message': 'You can only delete your own comments'
+            }, status=status.HTTP_403_FORBIDDEN)
         instance.delete()

@@ -1,23 +1,26 @@
 from django.urls import path
+from rest_framework_simplejwt.views import TokenRefreshView
 from . import views
 
-# URL patterns for authentication app
 urlpatterns = [
-    # User Registration Endpoint
+    # User Registration & Login
     path('register/', views.register_user, name='register_user'),
-    
-    # User Login Endpoint  
     path('login/', views.login_user, name='login_user'),
     
-    # Username Availability Check
-    path('check-username/', views.check_username_availability, name='check_username'),
+    # JWT Token Management
+    path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     
-    # Email Availability Check
+    # Current User Info
+    path('me/', views.current_user, name='current_user'),
+    
+    # Validation Endpoints
+    path('check-username/', views.check_username_availability, name='check_username'),
     path('check-email/', views.check_email_availability, name='check_email'),
-
-      # ✅ ADD THESE NEW OTP ENDPOINTS:
+    
+    # OTP Endpoints
     path('send-otp/', views.send_otp, name='send_otp'),
     path('verify-otp/', views.verify_otp, name='verify_otp'),
-
+    
+    # Google Sign-In Support
     path('api/auth/check-email/', views.check_email_exists),
 ]

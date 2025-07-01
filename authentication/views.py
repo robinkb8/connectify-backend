@@ -1,21 +1,20 @@
-# authentication/views.py
 from rest_framework import status
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
-from .serializers import UserRegistrationSerializer
-from .models import User
-from .models import EmailOTP
-from .email_service import generate_otp, send_otp_email
 from django.utils import timezone
 
+from .serializers import UserRegistrationSerializer
+from .models import User, EmailOTP
+from .email_service import generate_otp, send_otp_email
 
-# In views.py
+
 @api_view(['POST'])
+@permission_classes([])
 def check_email_exists(request):
-    """
-    Check if user with this email exists (used for Google Sign-In)
-    """
+    """Check if user with this email exists (used for Google Sign-In)"""
     email = request.data.get('email', '').strip().lower()
 
     if not email:
@@ -28,36 +27,34 @@ def check_email_exists(request):
     user_exists = User.objects.filter(email=email).exists()
 
     return Response({
-        'available': not user_exists,  # ✅ If user exists → available = False
+        'available': not user_exists,
         'exists': user_exists,
         'message': 'User found' if user_exists else 'User not found'
     }, status=status.HTTP_200_OK)
 
+
 @api_view(['POST'])
+@permission_classes([])
 def register_user(request):
-    """
-    Handle user registration
-    
-    This view receives POST requests from React frontend
-    and creates new users in the database
-    """
-    
-    # Step 1: Get data from React frontend
+    """Handle user registration with JWT token generation"""
     data = request.data
-    print(f"Received registration data: {data}")
-    
-    # Step 2: Validate data using our serializer
     serializer = UserRegistrationSerializer(data=data)
     
     if serializer.is_valid():
-        # Step 3: Data is valid, create the user
         try:
             user = serializer.save()
             
-            # Step 4: Return success response to React
+            # Generate JWT tokens
+            refresh = RefreshToken.for_user(user)
+            access_token = refresh.access_token
+            
             return Response({
                 'success': True,
                 'message': 'Account created successfully!',
+                'tokens': {
+                    'access': str(access_token),
+                    'refresh': str(refresh),
+                },
                 'user': {
                     'id': user.id,
                     'email': user.email,
@@ -67,14 +64,12 @@ def register_user(request):
             }, status=status.HTTP_201_CREATED)
             
         except Exception as e:
-            # Handle any database errors
             return Response({
                 'success': False,
                 'message': f'Failed to create account: {str(e)}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     else:
-        # Step 5: Data is invalid, return errors to React
         return Response({
             'success': False,
             'message': 'Validation failed',
@@ -83,35 +78,33 @@ def register_user(request):
 
 
 @api_view(['POST'])
+@permission_classes([])
 def login_user(request):
-    """
-    Handle user login
+    """Handle user login with JWT token generation"""
+    email = request.data.get('email', '').strip().lower()
+    password = request.data.get('password', '')
     
-    This view authenticates users and returns login status
-    """
-    
-    # Step 1: Get email and password from React
-    email = request.data.get('email')
-    password = request.data.get('password')
-    
-    # Step 2: Validate required fields
     if not email or not password:
         return Response({
             'success': False,
             'message': 'Email and password are required'
         }, status=status.HTTP_400_BAD_REQUEST)
     
-    # Step 3: Try to authenticate user
     try:
-        # Check if user exists
         user = User.objects.get(email=email)
         
-        # Verify password
         if user.check_password(password):
-            # Step 4: Login successful
+            # Generate JWT tokens
+            refresh = RefreshToken.for_user(user)
+            access_token = refresh.access_token
+            
             return Response({
                 'success': True,
                 'message': 'Login successful!',
+                'tokens': {
+                    'access': str(access_token),
+                    'refresh': str(refresh),
+                },
                 'user': {
                     'id': user.id,
                     'email': user.email,
@@ -120,36 +113,44 @@ def login_user(request):
                 }
             }, status=status.HTTP_200_OK)
         else:
-            # Wrong password
             return Response({
                 'success': False,
                 'message': 'Invalid email or password'
             }, status=status.HTTP_401_UNAUTHORIZED)
             
     except User.DoesNotExist:
-        # User not found
         return Response({
             'success': False,
             'message': 'Invalid email or password'
         }, status=status.HTTP_401_UNAUTHORIZED)
     
     except Exception as e:
-        # Handle unexpected errors
         return Response({
             'success': False,
             'message': f'Login failed: {str(e)}'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def current_user(request):
+    """Get current authenticated user info"""
+    user = request.user
+    return Response({
+        'success': True,
+        'user': {
+            'id': user.id,
+            'email': user.email,
+            'username': user.username,
+            'full_name': user.full_name
+        }
+    })
+
+
 @api_view(['POST'])
+@permission_classes([])
 def check_username_availability(request):
-    """
-    Check if username is available
-    
-    This is called when user types in username field
-    for real-time validation
-    """
-    
+    """Check if username is available"""
     username = request.data.get('username', '').strip().lower()
     
     if not username:
@@ -158,7 +159,6 @@ def check_username_availability(request):
             'message': 'Username is required'
         }, status=status.HTTP_400_BAD_REQUEST)
     
-    # Check if username already exists
     if User.objects.filter(username=username).exists():
         return Response({
             'available': False,
@@ -172,14 +172,9 @@ def check_username_availability(request):
 
 
 @api_view(['POST'])
+@permission_classes([])
 def check_email_availability(request):
-    """
-    Check if email is available
-    
-    This is called during registration to check
-    if email is already registered
-    """
-    
+    """Check if email is available"""
     email = request.data.get('email', '').strip().lower()
     
     if not email:
@@ -188,7 +183,6 @@ def check_email_availability(request):
             'message': 'Email is required'
         }, status=status.HTTP_400_BAD_REQUEST)
     
-    # Check if email already exists
     if User.objects.filter(email=email).exists():
         return Response({
             'available': False,
@@ -200,9 +194,11 @@ def check_email_availability(request):
         'message': 'Email is available!'
     }, status=status.HTTP_200_OK)
 
+
 @api_view(['POST'])
+@permission_classes([])
 def send_otp(request):
-    """Send real OTP email using AWS SES"""
+    """Send OTP email using AWS SES"""
     email = request.data.get('email', '').strip().lower()
     
     if not email:
@@ -212,16 +208,13 @@ def send_otp(request):
         }, status=status.HTTP_400_BAD_REQUEST)
     
     try:
-        # Generate 6-digit OTP
         otp_code = generate_otp()
         
-        # Save OTP to database
         EmailOTP.objects.create(
             email=email,
             otp_code=otp_code
         )
         
-        # Send email via AWS SES
         email_sent = send_otp_email(email, otp_code)
         
         if email_sent:
@@ -243,6 +236,7 @@ def send_otp(request):
 
 
 @api_view(['POST'])
+@permission_classes([])
 def verify_otp(request):
     """Verify OTP code from database"""
     email = request.data.get('email', '').strip().lower()
@@ -255,7 +249,6 @@ def verify_otp(request):
         }, status=status.HTTP_400_BAD_REQUEST)
     
     try:
-        # Find the most recent unused OTP for this email
         otp_record = EmailOTP.objects.filter(
             email=email,
             otp_code=otp_code,
@@ -274,7 +267,6 @@ def verify_otp(request):
                 'message': 'OTP has expired. Please request a new one.'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Mark OTP as used
         otp_record.is_used = True
         otp_record.save()
         
