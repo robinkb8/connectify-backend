@@ -33,16 +33,23 @@ def check_email_exists(request):
     }, status=status.HTTP_200_OK)
 
 
+# REPLACE the register_user and login_user functions in authentication/views.py
+
 @api_view(['POST'])
 @permission_classes([])
 def register_user(request):
-    """Handle user registration with JWT token generation"""
+    """Handle user registration with JWT token generation and profile creation"""
     data = request.data
     serializer = UserRegistrationSerializer(data=data)
     
     if serializer.is_valid():
         try:
             user = serializer.save()
+            
+            # Ensure profile exists (signal should create it, but just in case)
+            from core.models import UserProfile
+            if not hasattr(user, 'profile'):
+                UserProfile.objects.get_or_create(user=user)
             
             # Generate JWT tokens
             refresh = RefreshToken.for_user(user)
@@ -59,7 +66,17 @@ def register_user(request):
                     'id': user.id,
                     'email': user.email,
                     'username': user.username,
-                    'full_name': user.full_name
+                    'full_name': user.full_name,
+                    'profile': {
+                        'bio': user.profile.bio,
+                        'avatar': user.profile.avatar.url if user.profile.avatar else None,
+                        'website': user.profile.website,
+                        'location': user.profile.location,
+                        'is_private': user.profile.is_private,
+                        'followers_count': user.profile.followers_count,
+                        'following_count': user.profile.following_count,
+                        'posts_count': user.profile.posts_count,
+                    }
                 }
             }, status=status.HTTP_201_CREATED)
             
@@ -80,7 +97,7 @@ def register_user(request):
 @api_view(['POST'])
 @permission_classes([])
 def login_user(request):
-    """Handle user login with JWT token generation"""
+    """Handle user login with JWT token generation and profile data"""
     email = request.data.get('email', '').strip().lower()
     password = request.data.get('password', '')
     
@@ -94,6 +111,11 @@ def login_user(request):
         user = User.objects.get(email=email)
         
         if user.check_password(password):
+            # Ensure profile exists
+            from core.models import UserProfile
+            if not hasattr(user, 'profile'):
+                UserProfile.objects.get_or_create(user=user)
+            
             # Generate JWT tokens
             refresh = RefreshToken.for_user(user)
             access_token = refresh.access_token
@@ -109,7 +131,17 @@ def login_user(request):
                     'id': user.id,
                     'email': user.email,
                     'username': user.username,
-                    'full_name': user.full_name
+                    'full_name': user.full_name,
+                    'profile': {
+                        'bio': user.profile.bio,
+                        'avatar': user.profile.avatar.url if user.profile.avatar else None,
+                        'website': user.profile.website,
+                        'location': user.profile.location,
+                        'is_private': user.profile.is_private,
+                        'followers_count': user.profile.followers_count,
+                        'following_count': user.profile.following_count,
+                        'posts_count': user.profile.posts_count,
+                    }
                 }
             }, status=status.HTTP_200_OK)
         else:
@@ -134,15 +166,31 @@ def login_user(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def current_user(request):
-    """Get current authenticated user info"""
+    """Get current authenticated user info with profile"""
     user = request.user
+    
+    # Ensure profile exists
+    from core.models import UserProfile
+    if not hasattr(user, 'profile'):
+        UserProfile.objects.get_or_create(user=user)
+    
     return Response({
         'success': True,
         'user': {
             'id': user.id,
             'email': user.email,
             'username': user.username,
-            'full_name': user.full_name
+            'full_name': user.full_name,
+            'profile': {
+                'bio': user.profile.bio,
+                'avatar': user.profile.avatar.url if user.profile.avatar else None,
+                'website': user.profile.website,
+                'location': user.profile.location,
+                'is_private': user.profile.is_private,
+                'followers_count': user.profile.followers_count,
+                'following_count': user.profile.following_count,
+                'posts_count': user.profile.posts_count,
+            }
         }
     })
 
@@ -280,3 +328,73 @@ def verify_otp(request):
             'success': False,
             'message': f'Error verifying OTP: {str(e)}'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    # ADD THESE NEW FUNCTIONS to authentication/views.py
+
+@api_view(['PUT', 'PATCH'])
+@permission_classes([IsAuthenticated])
+def update_user_profile(request):
+    """Update user profile information"""
+    user = request.user
+    
+    # Ensure profile exists
+    from core.models import UserProfile
+    profile, created = UserProfile.objects.get_or_create(user=user)
+    
+    # Update profile fields
+    if 'bio' in request.data:
+        profile.bio = request.data['bio']
+    if 'website' in request.data:
+        profile.website = request.data['website']
+    if 'location' in request.data:
+        profile.location = request.data['location']
+    if 'is_private' in request.data:
+        profile.is_private = request.data['is_private']
+    
+    # Handle avatar upload
+    if 'avatar' in request.FILES:
+        profile.avatar = request.FILES['avatar']
+    
+    profile.save()
+    
+    return Response({
+        'success': True,
+        'message': 'Profile updated successfully',
+        'profile': {
+            'bio': profile.bio,
+            'avatar': profile.avatar.url if profile.avatar else None,
+            'website': profile.website,
+            'location': profile.location,
+            'is_private': profile.is_private,
+            'followers_count': profile.followers_count,
+            'following_count': profile.following_count,
+            'posts_count': profile.posts_count,
+        }
+    })
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def upload_avatar(request):
+    """Upload user avatar"""
+    if 'avatar' not in request.FILES:
+        return Response({
+            'success': False,
+            'message': 'No avatar file provided'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    user = request.user
+    
+    # Ensure profile exists
+    from core.models import UserProfile
+    profile, created = UserProfile.objects.get_or_create(user=user)
+    
+    # Update avatar
+    profile.avatar = request.FILES['avatar']
+    profile.save()
+    
+    return Response({
+        'success': True,
+        'message': 'Avatar uploaded successfully',
+        'avatar_url': profile.avatar.url if profile.avatar else None
+    })

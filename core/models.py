@@ -239,3 +239,18 @@ def update_post_comments_on_delete(sender, instance, **kwargs):
     """Update post comments count when a comment is deleted"""
     instance.post.total_comments = instance.post.comments.count()
     instance.post.save(update_fields=['total_comments'])
+
+@receiver(post_save, sender=settings.AUTH_USER_MODEL)
+def create_user_profile(sender, instance, created, **kwargs):
+    """Automatically create UserProfile when new user is created"""
+    if created:
+        UserProfile.objects.create(user=instance)
+
+@receiver(post_save, sender=settings.AUTH_USER_MODEL)
+def save_user_profile(sender, instance, **kwargs):
+    """Save profile when user is saved"""
+    if hasattr(instance, 'profile'):
+        instance.profile.save()
+    else:
+        # Create profile if it doesn't exist (for existing users)
+        UserProfile.objects.get_or_create(user=instance)

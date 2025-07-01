@@ -13,6 +13,10 @@ urlpatterns = [
     # Current User Info
     path('me/', views.current_user, name='current_user'),
     
+    # Profile Management
+    path('profile/update/', views.update_user_profile, name='update_profile'),
+    path('profile/avatar/', views.upload_avatar, name='upload_avatar'),
+    
     # Validation Endpoints
     path('check-username/', views.check_username_availability, name='check_username'),
     path('check-email/', views.check_email_availability, name='check_email'),
