@@ -1,3 +1,6 @@
+# authentication/views.py - CHANGE 1: Add Profile View Endpoint
+# ALL EXISTING FUNCTIONS PRESERVED - ONLY ADDING ONE NEW FUNCTION
+
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
@@ -5,11 +8,13 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
 from django.utils import timezone
+from django.shortcuts import get_object_or_404
 
 from .serializers import UserRegistrationSerializer
 from .models import User, EmailOTP
 from .email_service import generate_otp, send_otp_email
 
+# ===== ALL EXISTING FUNCTIONS PRESERVED EXACTLY AS-IS =====
 
 @api_view(['POST'])
 @permission_classes([])
@@ -32,8 +37,6 @@ def check_email_exists(request):
         'message': 'User found' if user_exists else 'User not found'
     }, status=status.HTTP_200_OK)
 
-
-# REPLACE the register_user and login_user functions in authentication/views.py
 
 @api_view(['POST'])
 @permission_classes([])
@@ -328,8 +331,7 @@ def verify_otp(request):
             'success': False,
             'message': f'Error verifying OTP: {str(e)}'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
-    # ADD THESE NEW FUNCTIONS to authentication/views.py
+
 
 @api_view(['PUT', 'PATCH'])
 @permission_classes([IsAuthenticated])
@@ -398,3 +400,94 @@ def upload_avatar(request):
         'message': 'Avatar uploaded successfully',
         'avatar_url': profile.avatar.url if profile.avatar else None
     })
+
+
+# ===== NEW FUNCTION - CHANGE 1 =====
+
+@api_view(['GET'])
+@permission_classes([])
+def get_user_profile(request, username):
+    """
+    GET /api/users/{username}/ - Get any user's profile by username
+    
+    NEW ENDPOINT for viewing other users' profiles
+    Public endpoint - no authentication required for public profiles
+    """
+    try:
+        # Find user by username (case-insensitive)
+        user = get_object_or_404(User, username__iexact=username)
+        
+        # Ensure profile exists
+        from core.models import UserProfile
+        if not hasattr(user, 'profile'):
+            UserProfile.objects.get_or_create(user=user)
+        
+        # Check if profile is private and user is not authenticated
+        if user.profile.is_private and not request.user.is_authenticated:
+            return Response({
+                'success': False,
+                'message': 'This profile is private'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Check if current user is viewing their own profile
+        is_own_profile = request.user.is_authenticated and request.user.id == user.id
+        
+        # For private profiles, only allow owner and followers to view
+        if user.profile.is_private and not is_own_profile:
+            # Check if current user follows this user
+            from core.models import Follow
+            is_following = request.user.is_authenticated and Follow.objects.filter(
+                follower=request.user, 
+                following=user
+            ).exists()
+            
+            if not is_following:
+                return Response({
+                    'success': False,
+                    'message': 'This profile is private. Follow to see their content.'
+                }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Determine follow status if user is authenticated
+        is_following = False
+        if request.user.is_authenticated and not is_own_profile:
+            from core.models import Follow
+            is_following = Follow.objects.filter(
+                follower=request.user,
+                following=user
+            ).exists()
+        
+        # Return profile data
+        return Response({
+            'success': True,
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'full_name': user.full_name,
+                'email': user.email if is_own_profile else None,  # Hide email for others
+                'date_joined': user.date_joined.isoformat(),
+                'profile': {
+                    'bio': user.profile.bio,
+                    'avatar': user.profile.avatar.url if user.profile.avatar else None,
+                    'website': user.profile.website,
+                    'location': user.profile.location,
+                    'is_private': user.profile.is_private,
+                    'followers_count': user.profile.followers_count,
+                    'following_count': user.profile.following_count,
+                    'posts_count': user.profile.posts_count,
+                },
+                'is_own_profile': is_own_profile,
+                'is_following': is_following,
+            }
+        }, status=status.HTTP_200_OK)
+        
+    except User.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': 'User not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    except Exception as e:
+        return Response({
+            'success': False,
+            'message': f'Error fetching profile: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
