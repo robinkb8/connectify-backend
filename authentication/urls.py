@@ -1,5 +1,5 @@
-# authentication/urls.py - CHANGE 1B: Add Profile URL Route
-# ALL EXISTING ROUTES PRESERVED - ONLY ADDING ONE NEW ROUTE
+# authentication/urls.py - CHANGE 2: Add Follow URLs
+# ALL EXISTING ROUTES PRESERVED - ADDING 2 NEW FOLLOW ROUTES
 
 from django.urls import path
 from . import views
@@ -34,8 +34,12 @@ urlpatterns = [
     path('profile/update/', views.update_user_profile, name='update_user_profile'),
     path('profile/avatar/', views.upload_avatar, name='upload_avatar'),
     
-    # ===== NEW ROUTE - CHANGE 1B =====
-    
-    # Get any user's profile by username
+    # User profile viewing (from Change 1)
     path('users/<str:username>/', views.get_user_profile, name='get_user_profile'),
+    
+    # ===== NEW ROUTES - CHANGE 2: FOLLOW SYSTEM =====
+    
+    # Follow/Unfollow system
+    path('users/<int:user_id>/follow/', views.follow_user, name='follow_user'),
+    path('users/<int:user_id>/unfollow/', views.unfollow_user, name='unfollow_user'),
 ]

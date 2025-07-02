@@ -1,5 +1,5 @@
-# authentication/views.py - CHANGE 1: Add Profile View Endpoint
-# ALL EXISTING FUNCTIONS PRESERVED - ONLY ADDING ONE NEW FUNCTION
+# authentication/views.py - CHANGE 2: Add Follow System
+# ALL EXISTING FUNCTIONS PRESERVED - ADDING 2 NEW FOLLOW FUNCTIONS
 
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -9,6 +9,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
+from django.db import transaction
 
 from .serializers import UserRegistrationSerializer
 from .models import User, EmailOTP
@@ -402,8 +403,6 @@ def upload_avatar(request):
     })
 
 
-# ===== NEW FUNCTION - CHANGE 1 =====
-
 @api_view(['GET'])
 @permission_classes([])
 def get_user_profile(request, username):
@@ -490,4 +489,151 @@ def get_user_profile(request, username):
         return Response({
             'success': False,
             'message': f'Error fetching profile: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ===== NEW FUNCTIONS - CHANGE 2: FOLLOW SYSTEM =====
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def follow_user(request, user_id):
+    """
+    POST /api/auth/users/{user_id}/follow/ - Follow a user
+    
+    NEW ENDPOINT for following users
+    """
+    try:
+        # Get the user to follow
+        user_to_follow = get_object_or_404(User, id=user_id)
+        current_user = request.user
+        
+        # Prevent users from following themselves
+        if current_user.id == user_to_follow.id:
+            return Response({
+                'success': False,
+                'message': 'You cannot follow yourself'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Check if already following
+        from core.models import Follow, UserProfile
+        
+        # Ensure both users have profiles
+        UserProfile.objects.get_or_create(user=current_user)
+        UserProfile.objects.get_or_create(user=user_to_follow)
+        
+        existing_follow = Follow.objects.filter(
+            follower=current_user,
+            following=user_to_follow
+        ).first()
+        
+        if existing_follow:
+            return Response({
+                'success': False,
+                'message': 'You are already following this user'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Create follow relationship with atomic transaction
+        with transaction.atomic():
+            # Create the follow relationship
+            Follow.objects.create(
+                follower=current_user,
+                following=user_to_follow
+            )
+            
+            # Update follower counts
+            current_user.profile.following_count = Follow.objects.filter(follower=current_user).count()
+            user_to_follow.profile.followers_count = Follow.objects.filter(following=user_to_follow).count()
+            
+            current_user.profile.save(update_fields=['following_count'])
+            user_to_follow.profile.save(update_fields=['followers_count'])
+        
+        return Response({
+            'success': True,
+            'message': f'You are now following {user_to_follow.full_name}',
+            'is_following': True,
+            'follower_count': user_to_follow.profile.followers_count,
+            'following_count': current_user.profile.following_count,
+        }, status=status.HTTP_201_CREATED)
+        
+    except User.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': 'User not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    except Exception as e:
+        return Response({
+            'success': False,
+            'message': f'Error following user: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def unfollow_user(request, user_id):
+    """
+    DELETE /api/auth/users/{user_id}/follow/ - Unfollow a user
+    
+    NEW ENDPOINT for unfollowing users
+    """
+    try:
+        # Get the user to unfollow
+        user_to_unfollow = get_object_or_404(User, id=user_id)
+        current_user = request.user
+        
+        # Prevent users from unfollowing themselves
+        if current_user.id == user_to_unfollow.id:
+            return Response({
+                'success': False,
+                'message': 'You cannot unfollow yourself'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Check if actually following
+        from core.models import Follow, UserProfile
+        
+        # Ensure both users have profiles
+        UserProfile.objects.get_or_create(user=current_user)
+        UserProfile.objects.get_or_create(user=user_to_unfollow)
+        
+        follow_relationship = Follow.objects.filter(
+            follower=current_user,
+            following=user_to_unfollow
+        ).first()
+        
+        if not follow_relationship:
+            return Response({
+                'success': False,
+                'message': 'You are not following this user'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Remove follow relationship with atomic transaction
+        with transaction.atomic():
+            # Delete the follow relationship
+            follow_relationship.delete()
+            
+            # Update follower counts
+            current_user.profile.following_count = Follow.objects.filter(follower=current_user).count()
+            user_to_unfollow.profile.followers_count = Follow.objects.filter(following=user_to_unfollow).count()
+            
+            current_user.profile.save(update_fields=['following_count'])
+            user_to_unfollow.profile.save(update_fields=['followers_count'])
+        
+        return Response({
+            'success': True,
+            'message': f'You have unfollowed {user_to_unfollow.full_name}',
+            'is_following': False,
+            'follower_count': user_to_unfollow.profile.followers_count,
+            'following_count': current_user.profile.following_count,
+        }, status=status.HTTP_200_OK)
+        
+    except User.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': 'User not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    except Exception as e:
+        return Response({
+            'success': False,
+            'message': f'Error unfollowing user: {str(e)}'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
