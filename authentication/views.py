@@ -1,5 +1,5 @@
-# authentication/views.py - CHANGE 3: Enhanced Profile Update
-# ALL EXISTING FUNCTIONS PRESERVED - ENHANCING update_user_profile FUNCTION
+# authentication/views.py - CHANGE 4: Add Followers/Following Lists
+# ALL EXISTING FUNCTIONS PRESERVED - ADDING 2 NEW LIST ENDPOINTS
 
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -12,12 +12,14 @@ from django.shortcuts import get_object_or_404
 from django.db import transaction
 from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError
+from django.core.paginator import Paginator
 
 from .serializers import UserRegistrationSerializer
 from .models import User, EmailOTP
 from .email_service import generate_otp, send_otp_email
 
 # ===== ALL EXISTING FUNCTIONS PRESERVED EXACTLY AS-IS =====
+# (Including all functions from Changes 1, 2, and 3)
 
 @api_view(['POST'])
 @permission_classes([])
@@ -597,8 +599,6 @@ def unfollow_user(request, user_id):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-# ===== ENHANCED FUNCTION - CHANGE 3: COMPREHENSIVE PROFILE UPDATE =====
-
 @api_view(['PUT', 'PATCH'])
 @permission_classes([IsAuthenticated])
 def update_user_profile(request):
@@ -754,4 +754,248 @@ def update_user_profile(request):
         return Response({
             'success': False,
             'message': f'Error updating profile: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ===== NEW FUNCTIONS - CHANGE 4: FOLLOWERS/FOLLOWING LISTS =====
+
+@api_view(['GET'])
+@permission_classes([])
+def get_user_followers(request, user_id):
+    """
+    GET /api/auth/users/{user_id}/followers/ - Get list of users who follow this user
+    
+    NEW ENDPOINT for getting followers list with pagination
+    """
+    try:
+        # Get the target user
+        target_user = get_object_or_404(User, id=user_id)
+        
+        # Ensure profile exists
+        from core.models import UserProfile, Follow
+        UserProfile.objects.get_or_create(user=target_user)
+        
+        # Check if profile is private
+        if target_user.profile.is_private:
+            # Only allow owner and followers to see followers list
+            if not request.user.is_authenticated:
+                return Response({
+                    'success': False,
+                    'message': 'This profile is private'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            is_owner = request.user.id == target_user.id
+            is_following = Follow.objects.filter(
+                follower=request.user,
+                following=target_user
+            ).exists()
+            
+            if not is_owner and not is_following:
+                return Response({
+                    'success': False,
+                    'message': 'This profile is private. Follow to see their followers.'
+                }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Get pagination parameters
+        page = int(request.GET.get('page', 1))
+        page_size = min(int(request.GET.get('page_size', 20)), 50)  # Max 50 per page
+        
+        # Get followers with user profile data
+        followers_queryset = Follow.objects.filter(
+            following=target_user
+        ).select_related(
+            'follower',
+            'follower__profile'
+        ).order_by('-created_at')
+        
+        # Paginate results
+        paginator = Paginator(followers_queryset, page_size)
+        followers_page = paginator.get_page(page)
+        
+        # Format follower data
+        followers_data = []
+        for follow in followers_page:
+            follower = follow.follower
+            
+            # Ensure follower has profile
+            if not hasattr(follower, 'profile'):
+                UserProfile.objects.get_or_create(user=follower)
+            
+            # Check if current user follows this follower
+            current_user_follows = False
+            if request.user.is_authenticated and request.user.id != follower.id:
+                current_user_follows = Follow.objects.filter(
+                    follower=request.user,
+                    following=follower
+                ).exists()
+            
+            followers_data.append({
+                'id': follower.id,
+                'username': follower.username,
+                'full_name': follower.full_name,
+                'profile': {
+                    'avatar': follower.profile.avatar.url if follower.profile.avatar else None,
+                    'bio': follower.profile.bio,
+                    'followers_count': follower.profile.followers_count,
+                    'is_private': follower.profile.is_private,
+                },
+                'is_following': current_user_follows,
+                'followed_at': follow.created_at.isoformat(),
+            })
+        
+        return Response({
+            'success': True,
+            'user': {
+                'id': target_user.id,
+                'username': target_user.username,
+                'full_name': target_user.full_name,
+            },
+            'followers': followers_data,
+            'pagination': {
+                'page': page,
+                'page_size': page_size,
+                'total_pages': paginator.num_pages,
+                'total_count': paginator.count,
+                'has_next': followers_page.has_next(),
+                'has_previous': followers_page.has_previous(),
+            }
+        }, status=status.HTTP_200_OK)
+        
+    except User.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': 'User not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    except ValueError:
+        return Response({
+            'success': False,
+            'message': 'Invalid page or page_size parameter'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    except Exception as e:
+        return Response({
+            'success': False,
+            'message': f'Error fetching followers: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([])
+def get_user_following(request, user_id):
+    """
+    GET /api/auth/users/{user_id}/following/ - Get list of users this user follows
+    
+    NEW ENDPOINT for getting following list with pagination
+    """
+    try:
+        # Get the target user
+        target_user = get_object_or_404(User, id=user_id)
+        
+        # Ensure profile exists
+        from core.models import UserProfile, Follow
+        UserProfile.objects.get_or_create(user=target_user)
+        
+        # Check if profile is private
+        if target_user.profile.is_private:
+            # Only allow owner and followers to see following list
+            if not request.user.is_authenticated:
+                return Response({
+                    'success': False,
+                    'message': 'This profile is private'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            is_owner = request.user.id == target_user.id
+            is_following = Follow.objects.filter(
+                follower=request.user,
+                following=target_user
+            ).exists()
+            
+            if not is_owner and not is_following:
+                return Response({
+                    'success': False,
+                    'message': 'This profile is private. Follow to see who they follow.'
+                }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Get pagination parameters
+        page = int(request.GET.get('page', 1))
+        page_size = min(int(request.GET.get('page_size', 20)), 50)  # Max 50 per page
+        
+        # Get following with user profile data
+        following_queryset = Follow.objects.filter(
+            follower=target_user
+        ).select_related(
+            'following',
+            'following__profile'
+        ).order_by('-created_at')
+        
+        # Paginate results
+        paginator = Paginator(following_queryset, page_size)
+        following_page = paginator.get_page(page)
+        
+        # Format following data
+        following_data = []
+        for follow in following_page:
+            following_user = follow.following
+            
+            # Ensure following user has profile
+            if not hasattr(following_user, 'profile'):
+                UserProfile.objects.get_or_create(user=following_user)
+            
+            # Check if current user follows this user
+            current_user_follows = False
+            if request.user.is_authenticated and request.user.id != following_user.id:
+                current_user_follows = Follow.objects.filter(
+                    follower=request.user,
+                    following=following_user
+                ).exists()
+            
+            following_data.append({
+                'id': following_user.id,
+                'username': following_user.username,
+                'full_name': following_user.full_name,
+                'profile': {
+                    'avatar': following_user.profile.avatar.url if following_user.profile.avatar else None,
+                    'bio': following_user.profile.bio,
+                    'followers_count': following_user.profile.followers_count,
+                    'is_private': following_user.profile.is_private,
+                },
+                'is_following': current_user_follows,
+                'followed_at': follow.created_at.isoformat(),
+            })
+        
+        return Response({
+            'success': True,
+            'user': {
+                'id': target_user.id,
+                'username': target_user.username,
+                'full_name': target_user.full_name,
+            },
+            'following': following_data,
+            'pagination': {
+                'page': page,
+                'page_size': page_size,
+                'total_pages': paginator.num_pages,
+                'total_count': paginator.count,
+                'has_next': following_page.has_next(),
+                'has_previous': following_page.has_previous(),
+            }
+        }, status=status.HTTP_200_OK)
+        
+    except User.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': 'User not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    except ValueError:
+        return Response({
+            'success': False,
+            'message': 'Invalid page or page_size parameter'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    except Exception as e:
+        return Response({
+            'success': False,
+            'message': f'Error fetching following: {str(e)}'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

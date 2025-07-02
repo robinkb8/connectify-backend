@@ -1,12 +1,10 @@
-# authentication/urls.py - CHANGE 2: Add Follow URLs
-# ALL EXISTING ROUTES PRESERVED - ADDING 2 NEW FOLLOW ROUTES
-
+# authentication/urls.py - COMPLETE WITH ALL ENDPOINTS
 from django.urls import path
 from . import views
 
 # URL patterns for authentication app
 urlpatterns = [
-    # ===== ALL EXISTING ROUTES PRESERVED =====
+    # ===== EXISTING ROUTES =====
     
     # User Registration Endpoint
     path('register/', views.register_user, name='register_user'),
@@ -34,12 +32,16 @@ urlpatterns = [
     path('profile/update/', views.update_user_profile, name='update_user_profile'),
     path('profile/avatar/', views.upload_avatar, name='upload_avatar'),
     
-    # User profile viewing (from Change 1)
+    # ===== MISSING ROUTES - ADD THESE =====
+    
+    # Profile viewing (Change 1)
     path('users/<str:username>/', views.get_user_profile, name='get_user_profile'),
     
-    # ===== NEW ROUTES - CHANGE 2: FOLLOW SYSTEM =====
-    
-    # Follow/Unfollow system
+    # Follow/Unfollow system (Change 2)
     path('users/<int:user_id>/follow/', views.follow_user, name='follow_user'),
     path('users/<int:user_id>/unfollow/', views.unfollow_user, name='unfollow_user'),
+    
+    # Followers/Following lists (Change 4)
+    path('users/<int:user_id>/followers/', views.get_user_followers, name='get_user_followers'),
+    path('users/<int:user_id>/following/', views.get_user_following, name='get_user_following'),
 ]
