@@ -1,5 +1,5 @@
-# authentication/views.py - CHANGE 2: Add Follow System
-# ALL EXISTING FUNCTIONS PRESERVED - ADDING 2 NEW FOLLOW FUNCTIONS
+# authentication/views.py - CHANGE 3: Enhanced Profile Update
+# ALL EXISTING FUNCTIONS PRESERVED - ENHANCING update_user_profile FUNCTION
 
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -10,6 +10,8 @@ from django.contrib.auth import authenticate
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from django.db import transaction
+from django.core.validators import URLValidator
+from django.core.exceptions import ValidationError
 
 from .serializers import UserRegistrationSerializer
 from .models import User, EmailOTP
@@ -334,48 +336,6 @@ def verify_otp(request):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-@api_view(['PUT', 'PATCH'])
-@permission_classes([IsAuthenticated])
-def update_user_profile(request):
-    """Update user profile information"""
-    user = request.user
-    
-    # Ensure profile exists
-    from core.models import UserProfile
-    profile, created = UserProfile.objects.get_or_create(user=user)
-    
-    # Update profile fields
-    if 'bio' in request.data:
-        profile.bio = request.data['bio']
-    if 'website' in request.data:
-        profile.website = request.data['website']
-    if 'location' in request.data:
-        profile.location = request.data['location']
-    if 'is_private' in request.data:
-        profile.is_private = request.data['is_private']
-    
-    # Handle avatar upload
-    if 'avatar' in request.FILES:
-        profile.avatar = request.FILES['avatar']
-    
-    profile.save()
-    
-    return Response({
-        'success': True,
-        'message': 'Profile updated successfully',
-        'profile': {
-            'bio': profile.bio,
-            'avatar': profile.avatar.url if profile.avatar else None,
-            'website': profile.website,
-            'location': profile.location,
-            'is_private': profile.is_private,
-            'followers_count': profile.followers_count,
-            'following_count': profile.following_count,
-            'posts_count': profile.posts_count,
-        }
-    })
-
-
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def upload_avatar(request):
@@ -491,8 +451,6 @@ def get_user_profile(request, username):
             'message': f'Error fetching profile: {str(e)}'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-
-# ===== NEW FUNCTIONS - CHANGE 2: FOLLOW SYSTEM =====
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -636,4 +594,164 @@ def unfollow_user(request, user_id):
         return Response({
             'success': False,
             'message': f'Error unfollowing user: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ===== ENHANCED FUNCTION - CHANGE 3: COMPREHENSIVE PROFILE UPDATE =====
+
+@api_view(['PUT', 'PATCH'])
+@permission_classes([IsAuthenticated])
+def update_user_profile(request):
+    """
+    Enhanced profile update with comprehensive validation and field handling
+    
+    ENHANCED VERSION - supports more fields with better validation
+    """
+    try:
+        user = request.user
+        
+        # Ensure profile exists
+        from core.models import UserProfile
+        profile, created = UserProfile.objects.get_or_create(user=user)
+        
+        # Dictionary to track what was updated
+        updated_fields = []
+        validation_errors = {}
+        
+        # Bio validation and update
+        if 'bio' in request.data:
+            bio = request.data.get('bio', '').strip()
+            if len(bio) > 150:
+                validation_errors['bio'] = 'Bio must be 150 characters or less'
+            else:
+                profile.bio = bio
+                updated_fields.append('bio')
+        
+        # Website validation and update
+        if 'website' in request.data:
+            website = request.data.get('website', '').strip()
+            if website:
+                # Add protocol if missing
+                if not website.startswith(('http://', 'https://')):
+                    website = 'https://' + website
+                
+                # Validate URL format
+                try:
+                    validator = URLValidator()
+                    validator(website)
+                    profile.website = website
+                    updated_fields.append('website')
+                except ValidationError:
+                    validation_errors['website'] = 'Please enter a valid website URL'
+            else:
+                profile.website = ''
+                updated_fields.append('website')
+        
+        # Location validation and update
+        if 'location' in request.data:
+            location = request.data.get('location', '').strip()
+            if len(location) > 50:
+                validation_errors['location'] = 'Location must be 50 characters or less'
+            else:
+                profile.location = location
+                updated_fields.append('location')
+        
+        # Privacy setting update
+        if 'is_private' in request.data:
+            is_private = request.data.get('is_private')
+            if isinstance(is_private, bool):
+                profile.is_private = is_private
+                updated_fields.append('is_private')
+            else:
+                validation_errors['is_private'] = 'Privacy setting must be true or false'
+        
+        # Full name validation and update (optional enhancement)
+        if 'full_name' in request.data:
+            full_name = request.data.get('full_name', '').strip()
+            if not full_name:
+                validation_errors['full_name'] = 'Full name cannot be empty'
+            elif len(full_name) > 50:
+                validation_errors['full_name'] = 'Full name must be 50 characters or less'
+            else:
+                user.full_name = full_name
+                updated_fields.append('full_name')
+        
+        # Username validation and update (careful - must be unique)
+        if 'username' in request.data:
+            new_username = request.data.get('username', '').strip().lower()
+            if not new_username:
+                validation_errors['username'] = 'Username cannot be empty'
+            elif len(new_username) < 3:
+                validation_errors['username'] = 'Username must be at least 3 characters'
+            elif len(new_username) > 30:
+                validation_errors['username'] = 'Username must be 30 characters or less'
+            elif not new_username.replace('_', '').replace('.', '').isalnum():
+                validation_errors['username'] = 'Username can only contain letters, numbers, dots, and underscores'
+            elif new_username != user.username:
+                # Check if username is already taken
+                if User.objects.filter(username=new_username).exists():
+                    validation_errors['username'] = 'This username is already taken'
+                else:
+                    user.username = new_username
+                    updated_fields.append('username')
+        
+        # Handle avatar upload
+        if 'avatar' in request.FILES:
+            avatar_file = request.FILES['avatar']
+            
+            # Validate file size (max 5MB)
+            if avatar_file.size > 5 * 1024 * 1024:
+                validation_errors['avatar'] = 'Avatar file must be smaller than 5MB'
+            # Validate file type
+            elif not avatar_file.content_type.startswith('image/'):
+                validation_errors['avatar'] = 'Avatar must be an image file'
+            else:
+                profile.avatar = avatar_file
+                updated_fields.append('avatar')
+        
+        # If there are validation errors, return them
+        if validation_errors:
+            return Response({
+                'success': False,
+                'message': 'Validation failed',
+                'errors': validation_errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Save changes with atomic transaction
+        with transaction.atomic():
+            if 'full_name' in updated_fields or 'username' in updated_fields:
+                user.save()
+            
+            if any(field in updated_fields for field in ['bio', 'website', 'location', 'is_private', 'avatar']):
+                profile.save()
+        
+        # Prepare response data
+        response_data = {
+            'success': True,
+            'message': f"Profile updated successfully ({', '.join(updated_fields)})" if updated_fields else "No changes made",
+            'updated_fields': updated_fields,
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'full_name': user.full_name,
+                'email': user.email,
+                'profile': {
+                    'bio': profile.bio,
+                    'avatar': profile.avatar.url if profile.avatar else None,
+                    'website': profile.website,
+                    'location': profile.location,
+                    'is_private': profile.is_private,
+                    'followers_count': profile.followers_count,
+                    'following_count': profile.following_count,
+                    'posts_count': profile.posts_count,
+                }
+            }
+        }
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({
+            'success': False,
+            'message': f'Error updating profile: {str(e)}'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
