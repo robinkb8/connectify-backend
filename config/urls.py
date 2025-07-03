@@ -1,3 +1,4 @@
+# config/urls.py - UPDATED WITH MESSAGING ROUTES
 from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
@@ -12,9 +13,14 @@ urlpatterns = [
     # API Endpoints - All authentication routes
     path('api/auth/', include('authentication.urls')),
 
+    # Core app routes (posts, likes, comments)
     path('api/', include('core.urls')),
+    
+    # NEW: Messaging system routes
+    path('api/messaging/', include('messaging.urls')),
 ]
-# ✅ ADD THIS: Serve media files in development
+
+# ✅ Serve media files in development
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)

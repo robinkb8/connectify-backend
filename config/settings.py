@@ -1,4 +1,4 @@
-# config/settings.py - COMPLETE UPDATED VERSION
+# config/settings.py - COMPLETE UPDATED VERSION WITH CHANNELS
 
 """
 Django settings for config project.
@@ -51,6 +51,9 @@ CORS_ALLOW_ALL_HEADERS = True
 # =====================================================
 
 INSTALLED_APPS = [
+    # ✅ DAPHNE MUST BE FIRST FOR ASGI SUPPORT
+    'daphne',
+    
     # Django built-in apps
     'django.contrib.admin',
     'django.contrib.auth',
@@ -59,14 +62,16 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
 
-    # ✅ THIRD PARTY APPS - ADD THESE
+    # ✅ THIRD PARTY APPS - EXISTING + NEW
     'rest_framework',     # Django REST Framework for API
     'corsheaders',        # CORS headers for React communication
     'rest_framework_simplejwt',
+    'channels',           # Django Channels for WebSocket support
     
     # ✅ OUR CUSTOM APPS
     'core',               # Core app (if you have one)
     'authentication',     # Our authentication app with User model
+    'messaging',          # NEW: Messaging system for direct messages
 ]
 
 # =====================================================
@@ -106,6 +111,20 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'config.wsgi.application'
+
+# =====================================================
+# DJANGO CHANNELS CONFIGURATION - NEW FOR MESSAGING
+# =====================================================
+
+# ASGI Application for WebSocket support
+ASGI_APPLICATION = 'config.asgi.application'
+
+# Channel layers (in-memory for development)
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels.layers.InMemoryChannelLayer'
+    }
+}
 
 # =====================================================
 # DATABASE CONFIGURATION
