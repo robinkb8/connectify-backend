@@ -22,7 +22,6 @@ from .serializers import (
 
 User = get_user_model()
 
-
 class ChatListCreateAPIView(generics.ListCreateAPIView):
     """
     GET /api/messaging/chats/ - List user's chats
@@ -58,6 +57,23 @@ class ChatListCreateAPIView(generics.ListCreateAPIView):
                 )
             )
         ).order_by('-last_activity')
+    
+    def create(self, request, *args, **kwargs):
+        """
+        FIXED: Handle chat creation with proper response serialization
+        Use ChatCreateSerializer for input, ChatSerializer for output
+        """
+        # Use ChatCreateSerializer for input validation
+        serializer = ChatCreateSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        
+        # Create the chat using existing perform_create logic
+        chat = self.perform_create(serializer)
+        
+        # Use ChatSerializer for output response to include all fields (id, participants, etc.)
+        output_serializer = ChatSerializer(chat, context={'request': request})
+        
+        return Response(output_serializer.data, status=status.HTTP_201_CREATED)
     
     def perform_create(self, serializer):
         """Create chat and handle participant validation"""
