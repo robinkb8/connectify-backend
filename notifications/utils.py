@@ -208,6 +208,53 @@ def _create_mention_notifications(comment):
 
 def _send_realtime_notification(notification):
     """Send real-time notification via WebSocket"""
-    # TODO: Implement WebSocket notification sending
-    # This will be implemented in the next step
-    pass
+    try:
+        from channels.layers import get_channel_layer
+        from asgiref.sync import async_to_sync
+        from .serializers import NotificationSerializer
+        
+        channel_layer = get_channel_layer()
+        if not channel_layer:
+            return
+        
+        # Create a mock request for serializer context
+        class MockRequest:
+            def __init__(self):
+                self.user = notification.recipient
+            
+            def build_absolute_uri(self, url):
+                return url
+        
+        # Serialize notification
+        mock_request = MockRequest()
+        serializer = NotificationSerializer(
+            notification, 
+            context={'request': mock_request}
+        )
+        
+        # Send to user's notification group
+        group_name = f'notifications_{notification.recipient.id}'
+        
+        async_to_sync(channel_layer.group_send)(
+            group_name,
+            {
+                'type': 'notification_created',
+                'notification_data': serializer.data
+            }
+        )
+        
+        # Also send updated unread count
+        unread_count = get_unread_count(notification.recipient)
+        
+        async_to_sync(channel_layer.group_send)(
+            group_name,
+            {
+                'type': 'unread_count_updated',
+                'count': unread_count
+            }
+        )
+        
+    except Exception as e:
+        # Don't crash if WebSocket fails
+        print(f"Failed to send real-time notification: {e}")
+        pass
