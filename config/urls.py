@@ -18,6 +18,8 @@ urlpatterns = [
     
     # NEW: Messaging system routes
     path('api/messaging/', include('messaging.urls')),
+
+    path('api/notifications/', include('notifications.urls')),
 ]
 
 # ✅ Serve media files in development
