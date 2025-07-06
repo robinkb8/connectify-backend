@@ -72,6 +72,7 @@ INSTALLED_APPS = [
     'core',               # Core app (if you have one)
     'authentication',     # Our authentication app with User model
     'messaging',          # NEW: Messaging system for direct messages
+    'notifications', 
 ]
 
 # =====================================================

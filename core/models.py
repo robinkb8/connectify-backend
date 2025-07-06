@@ -220,6 +220,10 @@ def update_post_likes_on_like(sender, instance, created, **kwargs):
     if created:
         instance.post.total_likes = instance.post.likes.count()
         instance.post.save(update_fields=['total_likes'])
+        
+        # Create notification for post author
+        from notifications.utils import create_like_notification
+        create_like_notification(instance)
 
 @receiver(post_delete, sender=PostLike)
 def update_post_likes_on_unlike(sender, instance, **kwargs):
@@ -233,12 +237,23 @@ def update_post_comments_on_add(sender, instance, created, **kwargs):
     if created:
         instance.post.total_comments = instance.post.comments.count()
         instance.post.save(update_fields=['total_comments'])
+        
+        # Create notification for post author and mentioned users
+        from notifications.utils import create_comment_notification
+        create_comment_notification(instance)
 
 @receiver(post_delete, sender=Comment)
 def update_post_comments_on_delete(sender, instance, **kwargs):
     """Update post comments count when a comment is deleted"""
     instance.post.total_comments = instance.post.comments.count()
     instance.post.save(update_fields=['total_comments'])
+
+@receiver(post_save, sender=Follow)
+def create_follow_notification(sender, instance, created, **kwargs):
+    """Create notification when user follows another user"""
+    if created:
+        from notifications.utils import create_follow_notification
+        create_follow_notification(instance)
 
 @receiver(post_save, sender=settings.AUTH_USER_MODEL)
 def create_user_profile(sender, instance, created, **kwargs):
