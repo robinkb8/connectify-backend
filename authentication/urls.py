@@ -44,4 +44,9 @@ urlpatterns = [
     # Followers/Following lists (Change 4)
     path('users/<int:user_id>/followers/', views.get_user_followers, name='get_user_followers'),
     path('users/<int:user_id>/following/', views.get_user_following, name='get_user_following'),
+    
+    # ===== ACCOUNT MANAGEMENT ENDPOINTS =====
+    
+    # Soft delete account endpoint
+    path('account/delete/', views.soft_delete_account, name='soft_delete_account'),
 ]

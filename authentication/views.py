@@ -1,5 +1,5 @@
-# authentication/views.py - CHANGE 4: Add Followers/Following Lists
-# ALL EXISTING FUNCTIONS PRESERVED - ADDING 2 NEW LIST ENDPOINTS
+# authentication/views.py - COMPLETE WITH SOFT DELETE FUNCTIONALITY
+# Professional authentication endpoints with comprehensive user management
 
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -18,13 +18,21 @@ from .serializers import UserRegistrationSerializer
 from .models import User, EmailOTP
 from .email_service import generate_otp, send_otp_email
 
-# ===== ALL EXISTING FUNCTIONS PRESERVED EXACTLY AS-IS =====
-# (Including all functions from Changes 1, 2, and 3)
+
+# ===== CORE AUTHENTICATION ENDPOINTS =====
 
 @api_view(['POST'])
 @permission_classes([])
 def check_email_exists(request):
-    """Check if user with this email exists (used for Google Sign-In)"""
+    """
+    Check if user with this email exists (used for Google Sign-In)
+    
+    Args:
+        request: POST request with email in data
+        
+    Returns:
+        Response with availability status and existence check
+    """
     email = request.data.get('email', '').strip().lower()
 
     if not email:
@@ -46,7 +54,15 @@ def check_email_exists(request):
 @api_view(['POST'])
 @permission_classes([])
 def register_user(request):
-    """Handle user registration with JWT token generation and profile creation"""
+    """
+    Handle user registration with JWT token generation and profile creation
+    
+    Args:
+        request: POST request with registration data
+        
+    Returns:
+        Response with success status, tokens, and user data
+    """
     data = request.data
     serializer = UserRegistrationSerializer(data=data)
     
@@ -54,12 +70,12 @@ def register_user(request):
         try:
             user = serializer.save()
             
-            # Ensure profile exists (signal should create it, but just in case)
+            # Ensure profile exists (signal should create it, but ensure consistency)
             from core.models import UserProfile
             if not hasattr(user, 'profile'):
                 UserProfile.objects.get_or_create(user=user)
             
-            # Generate JWT tokens
+            # Generate JWT tokens for immediate authentication
             refresh = RefreshToken.for_user(user)
             access_token = refresh.access_token
             
@@ -105,7 +121,15 @@ def register_user(request):
 @api_view(['POST'])
 @permission_classes([])
 def login_user(request):
-    """Handle user login with JWT token generation and profile data"""
+    """
+    Handle user login with JWT token generation and profile data
+    
+    Args:
+        request: POST request with email and password
+        
+    Returns:
+        Response with success status, tokens, and user data
+    """
     email = request.data.get('email', '').strip().lower()
     password = request.data.get('password', '')
     
@@ -119,12 +143,12 @@ def login_user(request):
         user = User.objects.get(email=email)
         
         if user.check_password(password):
-            # Ensure profile exists
+            # Ensure profile exists for consistency
             from core.models import UserProfile
             if not hasattr(user, 'profile'):
                 UserProfile.objects.get_or_create(user=user)
             
-            # Generate JWT tokens
+            # Generate JWT tokens for authentication
             refresh = RefreshToken.for_user(user)
             access_token = refresh.access_token
             
@@ -174,10 +198,18 @@ def login_user(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def current_user(request):
-    """Get current authenticated user info with profile"""
+    """
+    Get current authenticated user info with profile data
+    
+    Args:
+        request: GET request from authenticated user
+        
+    Returns:
+        Response with current user data and profile information
+    """
     user = request.user
     
-    # Ensure profile exists
+    # Ensure profile exists for data consistency
     from core.models import UserProfile
     if not hasattr(user, 'profile'):
         UserProfile.objects.get_or_create(user=user)
@@ -203,10 +235,20 @@ def current_user(request):
     })
 
 
+# ===== VALIDATION ENDPOINTS =====
+
 @api_view(['POST'])
 @permission_classes([])
 def check_username_availability(request):
-    """Check if username is available"""
+    """
+    Check if username is available for registration
+    
+    Args:
+        request: POST request with username in data
+        
+    Returns:
+        Response with availability status and message
+    """
     username = request.data.get('username', '').strip().lower()
     
     if not username:
@@ -230,7 +272,15 @@ def check_username_availability(request):
 @api_view(['POST'])
 @permission_classes([])
 def check_email_availability(request):
-    """Check if email is available"""
+    """
+    Check if email is available for registration
+    
+    Args:
+        request: POST request with email in data
+        
+    Returns:
+        Response with availability status and message
+    """
     email = request.data.get('email', '').strip().lower()
     
     if not email:
@@ -251,10 +301,20 @@ def check_email_availability(request):
     }, status=status.HTTP_200_OK)
 
 
+# ===== EMAIL VERIFICATION ENDPOINTS =====
+
 @api_view(['POST'])
 @permission_classes([])
 def send_otp(request):
-    """Send OTP email using AWS SES"""
+    """
+    Send OTP email using AWS SES for email verification
+    
+    Args:
+        request: POST request with email in data
+        
+    Returns:
+        Response with success status and message
+    """
     email = request.data.get('email', '').strip().lower()
     
     if not email:
@@ -266,11 +326,13 @@ def send_otp(request):
     try:
         otp_code = generate_otp()
         
+        # Store OTP in database for verification
         EmailOTP.objects.create(
             email=email,
             otp_code=otp_code
         )
         
+        # Send OTP via email service
         email_sent = send_otp_email(email, otp_code)
         
         if email_sent:
@@ -294,7 +356,15 @@ def send_otp(request):
 @api_view(['POST'])
 @permission_classes([])
 def verify_otp(request):
-    """Verify OTP code from database"""
+    """
+    Verify OTP code from database for email confirmation
+    
+    Args:
+        request: POST request with email and otp_code in data
+        
+    Returns:
+        Response with verification status and message
+    """
     email = request.data.get('email', '').strip().lower()
     otp_code = request.data.get('otp_code', '').strip()
     
@@ -305,6 +375,7 @@ def verify_otp(request):
         }, status=status.HTTP_400_BAD_REQUEST)
     
     try:
+        # Find unused OTP record for this email and code
         otp_record = EmailOTP.objects.filter(
             email=email,
             otp_code=otp_code,
@@ -323,6 +394,7 @@ def verify_otp(request):
                 'message': 'OTP has expired. Please request a new one.'
             }, status=status.HTTP_400_BAD_REQUEST)
         
+        # Mark OTP as used to prevent reuse
         otp_record.is_used = True
         otp_record.save()
         
@@ -338,10 +410,20 @@ def verify_otp(request):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+# ===== PROFILE MANAGEMENT ENDPOINTS =====
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def upload_avatar(request):
-    """Upload user avatar"""
+    """
+    Upload user avatar image to user profile
+    
+    Args:
+        request: POST request with avatar file
+        
+    Returns:
+        Response with success status and avatar URL
+    """
     if 'avatar' not in request.FILES:
         return Response({
             'success': False,
@@ -350,11 +432,11 @@ def upload_avatar(request):
     
     user = request.user
     
-    # Ensure profile exists
+    # Ensure profile exists for avatar upload
     from core.models import UserProfile
     profile, created = UserProfile.objects.get_or_create(user=user)
     
-    # Update avatar
+    # Update avatar field with uploaded file
     profile.avatar = request.FILES['avatar']
     profile.save()
     
@@ -365,256 +447,26 @@ def upload_avatar(request):
     })
 
 
-@api_view(['GET'])
-@permission_classes([])
-def get_user_profile(request, username):
-    """
-    GET /api/users/{username}/ - Get any user's profile by username
-    
-    NEW ENDPOINT for viewing other users' profiles
-    Public endpoint - no authentication required for public profiles
-    """
-    try:
-        # Find user by username (case-insensitive)
-        user = get_object_or_404(User, username__iexact=username)
-        
-        # Ensure profile exists
-        from core.models import UserProfile
-        if not hasattr(user, 'profile'):
-            UserProfile.objects.get_or_create(user=user)
-        
-        # Check if profile is private and user is not authenticated
-        if user.profile.is_private and not request.user.is_authenticated:
-            return Response({
-                'success': False,
-                'message': 'This profile is private'
-            }, status=status.HTTP_403_FORBIDDEN)
-        
-        # Check if current user is viewing their own profile
-        is_own_profile = request.user.is_authenticated and request.user.id == user.id
-        
-        # For private profiles, only allow owner and followers to view
-        if user.profile.is_private and not is_own_profile:
-            # Check if current user follows this user
-            from core.models import Follow
-            is_following = request.user.is_authenticated and Follow.objects.filter(
-                follower=request.user, 
-                following=user
-            ).exists()
-            
-            if not is_following:
-                return Response({
-                    'success': False,
-                    'message': 'This profile is private. Follow to see their content.'
-                }, status=status.HTTP_403_FORBIDDEN)
-        
-        # Determine follow status if user is authenticated
-        is_following = False
-        if request.user.is_authenticated and not is_own_profile:
-            from core.models import Follow
-            is_following = Follow.objects.filter(
-                follower=request.user,
-                following=user
-            ).exists()
-        
-        # Return profile data
-        return Response({
-            'success': True,
-            'user': {
-                'id': user.id,
-                'username': user.username,
-                'full_name': user.full_name,
-                'email': user.email if is_own_profile else None,  # Hide email for others
-                'date_joined': user.date_joined.isoformat(),
-                'profile': {
-                    'bio': user.profile.bio,
-                    'avatar': user.profile.avatar.url if user.profile.avatar else None,
-                    'website': user.profile.website,
-                    'location': user.profile.location,
-                    'is_private': user.profile.is_private,
-                    'followers_count': user.profile.followers_count,
-                    'following_count': user.profile.following_count,
-                    'posts_count': user.profile.posts_count,
-                },
-                'is_own_profile': is_own_profile,
-                'is_following': is_following,
-            }
-        }, status=status.HTTP_200_OK)
-        
-    except User.DoesNotExist:
-        return Response({
-            'success': False,
-            'message': 'User not found'
-        }, status=status.HTTP_404_NOT_FOUND)
-    
-    except Exception as e:
-        return Response({
-            'success': False,
-            'message': f'Error fetching profile: {str(e)}'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def follow_user(request, user_id):
-    """
-    POST /api/auth/users/{user_id}/follow/ - Follow a user
-    
-    NEW ENDPOINT for following users
-    """
-    try:
-        # Get the user to follow
-        user_to_follow = get_object_or_404(User, id=user_id)
-        current_user = request.user
-        
-        # Prevent users from following themselves
-        if current_user.id == user_to_follow.id:
-            return Response({
-                'success': False,
-                'message': 'You cannot follow yourself'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Check if already following
-        from core.models import Follow, UserProfile
-        
-        # Ensure both users have profiles
-        UserProfile.objects.get_or_create(user=current_user)
-        UserProfile.objects.get_or_create(user=user_to_follow)
-        
-        existing_follow = Follow.objects.filter(
-            follower=current_user,
-            following=user_to_follow
-        ).first()
-        
-        if existing_follow:
-            return Response({
-                'success': False,
-                'message': 'You are already following this user'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Create follow relationship with atomic transaction
-        with transaction.atomic():
-            # Create the follow relationship
-            Follow.objects.create(
-                follower=current_user,
-                following=user_to_follow
-            )
-            
-            # Update follower counts
-            current_user.profile.following_count = Follow.objects.filter(follower=current_user).count()
-            user_to_follow.profile.followers_count = Follow.objects.filter(following=user_to_follow).count()
-            
-            current_user.profile.save(update_fields=['following_count'])
-            user_to_follow.profile.save(update_fields=['followers_count'])
-        
-        return Response({
-            'success': True,
-            'message': f'You are now following {user_to_follow.full_name}',
-            'is_following': True,
-            'follower_count': user_to_follow.profile.followers_count,
-            'following_count': current_user.profile.following_count,
-        }, status=status.HTTP_201_CREATED)
-        
-    except User.DoesNotExist:
-        return Response({
-            'success': False,
-            'message': 'User not found'
-        }, status=status.HTTP_404_NOT_FOUND)
-    
-    except Exception as e:
-        return Response({
-            'success': False,
-            'message': f'Error following user: {str(e)}'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-@api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
-def unfollow_user(request, user_id):
-    """
-    DELETE /api/auth/users/{user_id}/follow/ - Unfollow a user
-    
-    NEW ENDPOINT for unfollowing users
-    """
-    try:
-        # Get the user to unfollow
-        user_to_unfollow = get_object_or_404(User, id=user_id)
-        current_user = request.user
-        
-        # Prevent users from unfollowing themselves
-        if current_user.id == user_to_unfollow.id:
-            return Response({
-                'success': False,
-                'message': 'You cannot unfollow yourself'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Check if actually following
-        from core.models import Follow, UserProfile
-        
-        # Ensure both users have profiles
-        UserProfile.objects.get_or_create(user=current_user)
-        UserProfile.objects.get_or_create(user=user_to_unfollow)
-        
-        follow_relationship = Follow.objects.filter(
-            follower=current_user,
-            following=user_to_unfollow
-        ).first()
-        
-        if not follow_relationship:
-            return Response({
-                'success': False,
-                'message': 'You are not following this user'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Remove follow relationship with atomic transaction
-        with transaction.atomic():
-            # Delete the follow relationship
-            follow_relationship.delete()
-            
-            # Update follower counts
-            current_user.profile.following_count = Follow.objects.filter(follower=current_user).count()
-            user_to_unfollow.profile.followers_count = Follow.objects.filter(following=user_to_unfollow).count()
-            
-            current_user.profile.save(update_fields=['following_count'])
-            user_to_unfollow.profile.save(update_fields=['followers_count'])
-        
-        return Response({
-            'success': True,
-            'message': f'You have unfollowed {user_to_unfollow.full_name}',
-            'is_following': False,
-            'follower_count': user_to_unfollow.profile.followers_count,
-            'following_count': current_user.profile.following_count,
-        }, status=status.HTTP_200_OK)
-        
-    except User.DoesNotExist:
-        return Response({
-            'success': False,
-            'message': 'User not found'
-        }, status=status.HTTP_404_NOT_FOUND)
-    
-    except Exception as e:
-        return Response({
-            'success': False,
-            'message': f'Error unfollowing user: {str(e)}'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
 @api_view(['PUT', 'PATCH'])
 @permission_classes([IsAuthenticated])
 def update_user_profile(request):
     """
     Enhanced profile update with comprehensive validation and field handling
     
-    ENHANCED VERSION - supports more fields with better validation
+    Args:
+        request: PUT/PATCH request with profile data to update
+        
+    Returns:
+        Response with success status, updated fields, and user data
     """
     try:
         user = request.user
         
-        # Ensure profile exists
+        # Ensure profile exists for updates
         from core.models import UserProfile
         profile, created = UserProfile.objects.get_or_create(user=user)
         
-        # Dictionary to track what was updated
+        # Track updates and validation errors
         updated_fields = []
         validation_errors = {}
         
@@ -627,11 +479,11 @@ def update_user_profile(request):
                 profile.bio = bio
                 updated_fields.append('bio')
         
-        # Website validation and update
+        # Website validation and update with protocol handling
         if 'website' in request.data:
             website = request.data.get('website', '').strip()
             if website:
-                # Add protocol if missing
+                # Add protocol if missing for proper validation
                 if not website.startswith(('http://', 'https://')):
                     website = 'https://' + website
                 
@@ -656,7 +508,7 @@ def update_user_profile(request):
                 profile.location = location
                 updated_fields.append('location')
         
-        # Privacy setting update
+        # Privacy setting update with type validation
         if 'is_private' in request.data:
             is_private = request.data.get('is_private')
             if isinstance(is_private, bool):
@@ -665,7 +517,7 @@ def update_user_profile(request):
             else:
                 validation_errors['is_private'] = 'Privacy setting must be true or false'
         
-        # Full name validation and update (optional enhancement)
+        # Full name validation and update
         if 'full_name' in request.data:
             full_name = request.data.get('full_name', '').strip()
             if not full_name:
@@ -676,7 +528,7 @@ def update_user_profile(request):
                 user.full_name = full_name
                 updated_fields.append('full_name')
         
-        # Username validation and update (careful - must be unique)
+        # Username validation and update with uniqueness check
         if 'username' in request.data:
             new_username = request.data.get('username', '').strip().lower()
             if not new_username:
@@ -688,14 +540,14 @@ def update_user_profile(request):
             elif not new_username.replace('_', '').replace('.', '').isalnum():
                 validation_errors['username'] = 'Username can only contain letters, numbers, dots, and underscores'
             elif new_username != user.username:
-                # Check if username is already taken
+                # Check uniqueness only if username is changing
                 if User.objects.filter(username=new_username).exists():
                     validation_errors['username'] = 'This username is already taken'
                 else:
                     user.username = new_username
                     updated_fields.append('username')
         
-        # Handle avatar upload
+        # Avatar upload handling with file validation
         if 'avatar' in request.FILES:
             avatar_file = request.FILES['avatar']
             
@@ -709,7 +561,7 @@ def update_user_profile(request):
                 profile.avatar = avatar_file
                 updated_fields.append('avatar')
         
-        # If there are validation errors, return them
+        # Return validation errors if any exist
         if validation_errors:
             return Response({
                 'success': False,
@@ -717,7 +569,7 @@ def update_user_profile(request):
                 'errors': validation_errors
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Save changes with atomic transaction
+        # Save changes atomically to prevent partial updates
         with transaction.atomic():
             if 'full_name' in updated_fields or 'username' in updated_fields:
                 user.save()
@@ -725,7 +577,7 @@ def update_user_profile(request):
             if any(field in updated_fields for field in ['bio', 'website', 'location', 'is_private', 'avatar']):
                 profile.save()
         
-        # Prepare response data
+        # Prepare comprehensive response data
         response_data = {
             'success': True,
             'message': f"Profile updated successfully ({', '.join(updated_fields)})" if updated_fields else "No changes made",
@@ -757,27 +609,282 @@ def update_user_profile(request):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-# ===== NEW FUNCTIONS - CHANGE 4: FOLLOWERS/FOLLOWING LISTS =====
+# ===== USER PROFILE ACCESS ENDPOINTS =====
+
+@api_view(['GET'])
+@permission_classes([])
+def get_user_profile(request, username):
+    """
+    Get any user's profile by username with privacy controls
+    
+    Args:
+        request: GET request with username in URL path
+        username: Target user's username to retrieve
+        
+    Returns:
+        Response with user profile data and relationship status
+    """
+    try:
+        # Find user by username (case-insensitive)
+        user = get_object_or_404(User, username__iexact=username)
+        
+        # Ensure profile exists for data consistency
+        from core.models import UserProfile
+        if not hasattr(user, 'profile'):
+            UserProfile.objects.get_or_create(user=user)
+        
+        # Check privacy settings and authentication status
+        if user.profile.is_private and not request.user.is_authenticated:
+            return Response({
+                'success': False,
+                'message': 'This profile is private'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Determine if viewing own profile
+        is_own_profile = request.user.is_authenticated and request.user.id == user.id
+        
+        # For private profiles, check follow relationship
+        if user.profile.is_private and not is_own_profile:
+            from core.models import Follow
+            is_following = request.user.is_authenticated and Follow.objects.filter(
+                follower=request.user, 
+                following=user
+            ).exists()
+            
+            if not is_following:
+                return Response({
+                    'success': False,
+                    'message': 'This profile is private. Follow to see their content.'
+                }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Determine follow status for authenticated users
+        is_following = False
+        if request.user.is_authenticated and not is_own_profile:
+            from core.models import Follow
+            is_following = Follow.objects.filter(
+                follower=request.user,
+                following=user
+            ).exists()
+        
+        # Return comprehensive profile data
+        return Response({
+            'success': True,
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'full_name': user.full_name,
+                'email': user.email if is_own_profile else None,  # Privacy: hide email for others
+                'date_joined': user.date_joined.isoformat(),
+                'profile': {
+                    'bio': user.profile.bio,
+                    'avatar': user.profile.avatar.url if user.profile.avatar else None,
+                    'website': user.profile.website,
+                    'location': user.profile.location,
+                    'is_private': user.profile.is_private,
+                    'followers_count': user.profile.followers_count,
+                    'following_count': user.profile.following_count,
+                    'posts_count': user.profile.posts_count,
+                },
+                'is_own_profile': is_own_profile,
+                'is_following': is_following,
+            }
+        }, status=status.HTTP_200_OK)
+        
+    except User.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': 'User not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    except Exception as e:
+        return Response({
+            'success': False,
+            'message': f'Error fetching profile: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ===== SOCIAL INTERACTION ENDPOINTS =====
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def follow_user(request, user_id):
+    """
+    Follow a user with atomic transaction handling
+    
+    Args:
+        request: POST request from authenticated user
+        user_id: ID of user to follow
+        
+    Returns:
+        Response with follow status and updated counts
+    """
+    try:
+        # Get target user and current user
+        user_to_follow = get_object_or_404(User, id=user_id)
+        current_user = request.user
+        
+        # Prevent self-following
+        if current_user.id == user_to_follow.id:
+            return Response({
+                'success': False,
+                'message': 'You cannot follow yourself'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Check existing follow relationship
+        from core.models import Follow, UserProfile
+        
+        # Ensure both users have profiles
+        UserProfile.objects.get_or_create(user=current_user)
+        UserProfile.objects.get_or_create(user=user_to_follow)
+        
+        existing_follow = Follow.objects.filter(
+            follower=current_user,
+            following=user_to_follow
+        ).first()
+        
+        if existing_follow:
+            return Response({
+                'success': False,
+                'message': 'You are already following this user'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Create follow relationship with atomic transaction
+        with transaction.atomic():
+            # Create the follow relationship
+            Follow.objects.create(
+                follower=current_user,
+                following=user_to_follow
+            )
+            
+            # Update follower counts for both users
+            current_user.profile.following_count = Follow.objects.filter(follower=current_user).count()
+            user_to_follow.profile.followers_count = Follow.objects.filter(following=user_to_follow).count()
+            
+            current_user.profile.save(update_fields=['following_count'])
+            user_to_follow.profile.save(update_fields=['followers_count'])
+        
+        return Response({
+            'success': True,
+            'message': f'You are now following {user_to_follow.full_name}',
+            'is_following': True,
+            'follower_count': user_to_follow.profile.followers_count,
+            'following_count': current_user.profile.following_count,
+        }, status=status.HTTP_201_CREATED)
+        
+    except User.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': 'User not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    except Exception as e:
+        return Response({
+            'success': False,
+            'message': f'Error following user: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def unfollow_user(request, user_id):
+    """
+    Unfollow a user with atomic transaction handling
+    
+    Args:
+        request: DELETE request from authenticated user
+        user_id: ID of user to unfollow
+        
+    Returns:
+        Response with unfollow status and updated counts
+    """
+    try:
+        # Get target user and current user
+        user_to_unfollow = get_object_or_404(User, id=user_id)
+        current_user = request.user
+        
+        # Prevent self-unfollowing
+        if current_user.id == user_to_unfollow.id:
+            return Response({
+                'success': False,
+                'message': 'You cannot unfollow yourself'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Check existing follow relationship
+        from core.models import Follow, UserProfile
+        
+        # Ensure both users have profiles
+        UserProfile.objects.get_or_create(user=current_user)
+        UserProfile.objects.get_or_create(user=user_to_unfollow)
+        
+        follow_relationship = Follow.objects.filter(
+            follower=current_user,
+            following=user_to_unfollow
+        ).first()
+        
+        if not follow_relationship:
+            return Response({
+                'success': False,
+                'message': 'You are not following this user'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Remove follow relationship with atomic transaction
+        with transaction.atomic():
+            # Delete the follow relationship
+            follow_relationship.delete()
+            
+            # Update follower counts for both users
+            current_user.profile.following_count = Follow.objects.filter(follower=current_user).count()
+            user_to_unfollow.profile.followers_count = Follow.objects.filter(following=user_to_unfollow).count()
+            
+            current_user.profile.save(update_fields=['following_count'])
+            user_to_unfollow.profile.save(update_fields=['followers_count'])
+        
+        return Response({
+            'success': True,
+            'message': f'You have unfollowed {user_to_unfollow.full_name}',
+            'is_following': False,
+            'follower_count': user_to_unfollow.profile.followers_count,
+            'following_count': current_user.profile.following_count,
+        }, status=status.HTTP_200_OK)
+        
+    except User.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': 'User not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    except Exception as e:
+        return Response({
+            'success': False,
+            'message': f'Error unfollowing user: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ===== SOCIAL NETWORK LIST ENDPOINTS =====
 
 @api_view(['GET'])
 @permission_classes([])
 def get_user_followers(request, user_id):
     """
-    GET /api/auth/users/{user_id}/followers/ - Get list of users who follow this user
+    Get paginated list of users who follow the specified user
     
-    NEW ENDPOINT for getting followers list with pagination
+    Args:
+        request: GET request with optional pagination parameters
+        user_id: ID of user whose followers to retrieve
+        
+    Returns:
+        Response with followers list and pagination metadata
     """
     try:
         # Get the target user
         target_user = get_object_or_404(User, id=user_id)
         
-        # Ensure profile exists
+        # Ensure profile exists for consistency
         from core.models import UserProfile, Follow
         UserProfile.objects.get_or_create(user=target_user)
         
-        # Check if profile is private
+        # Check privacy settings for followers list access
         if target_user.profile.is_private:
-            # Only allow owner and followers to see followers list
             if not request.user.is_authenticated:
                 return Response({
                     'success': False,
@@ -796,11 +903,11 @@ def get_user_followers(request, user_id):
                     'message': 'This profile is private. Follow to see their followers.'
                 }, status=status.HTTP_403_FORBIDDEN)
         
-        # Get pagination parameters
+        # Get pagination parameters with reasonable limits
         page = int(request.GET.get('page', 1))
         page_size = min(int(request.GET.get('page_size', 20)), 50)  # Max 50 per page
         
-        # Get followers with user profile data
+        # Get followers with user profile data using select_related for efficiency
         followers_queryset = Follow.objects.filter(
             following=target_user
         ).select_related(
@@ -812,12 +919,12 @@ def get_user_followers(request, user_id):
         paginator = Paginator(followers_queryset, page_size)
         followers_page = paginator.get_page(page)
         
-        # Format follower data
+        # Format follower data with relationship status
         followers_data = []
         for follow in followers_page:
             follower = follow.follower
             
-            # Ensure follower has profile
+            # Ensure follower has profile for data consistency
             if not hasattr(follower, 'profile'):
                 UserProfile.objects.get_or_create(user=follower)
             
@@ -884,21 +991,25 @@ def get_user_followers(request, user_id):
 @permission_classes([])
 def get_user_following(request, user_id):
     """
-    GET /api/auth/users/{user_id}/following/ - Get list of users this user follows
+    Get paginated list of users that the specified user follows
     
-    NEW ENDPOINT for getting following list with pagination
+    Args:
+        request: GET request with optional pagination parameters
+        user_id: ID of user whose following list to retrieve
+        
+    Returns:
+        Response with following list and pagination metadata
     """
     try:
         # Get the target user
         target_user = get_object_or_404(User, id=user_id)
         
-        # Ensure profile exists
+        # Ensure profile exists for consistency
         from core.models import UserProfile, Follow
         UserProfile.objects.get_or_create(user=target_user)
         
-        # Check if profile is private
+        # Check privacy settings for following list access
         if target_user.profile.is_private:
-            # Only allow owner and followers to see following list
             if not request.user.is_authenticated:
                 return Response({
                     'success': False,
@@ -917,11 +1028,11 @@ def get_user_following(request, user_id):
                     'message': 'This profile is private. Follow to see who they follow.'
                 }, status=status.HTTP_403_FORBIDDEN)
         
-        # Get pagination parameters
+        # Get pagination parameters with reasonable limits
         page = int(request.GET.get('page', 1))
         page_size = min(int(request.GET.get('page_size', 20)), 50)  # Max 50 per page
         
-        # Get following with user profile data
+        # Get following with user profile data using select_related for efficiency
         following_queryset = Follow.objects.filter(
             follower=target_user
         ).select_related(
@@ -933,12 +1044,12 @@ def get_user_following(request, user_id):
         paginator = Paginator(following_queryset, page_size)
         following_page = paginator.get_page(page)
         
-        # Format following data
+        # Format following data with relationship status
         following_data = []
         for follow in following_page:
             following_user = follow.following
             
-            # Ensure following user has profile
+            # Ensure following user has profile for data consistency
             if not hasattr(following_user, 'profile'):
                 UserProfile.objects.get_or_create(user=following_user)
             
@@ -998,4 +1109,51 @@ def get_user_following(request, user_id):
         return Response({
             'success': False,
             'message': f'Error fetching following: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ===== ACCOUNT MANAGEMENT ENDPOINTS =====
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def soft_delete_account(request):
+    """
+    Soft delete user account - marks account as inactive instead of hard delete
+    This preserves data integrity while removing user access
+    
+    Args:
+        request: DELETE request from authenticated user
+        
+    Returns:
+        Response with deletion status and success message
+    """
+    try:
+        user = request.user
+        
+        # Soft delete: Mark user as inactive instead of permanent deletion
+        # This preserves referential integrity and allows for account recovery
+        user.is_active = False
+        user.date_deleted = timezone.now()  # Add this field to your User model
+        user.save(update_fields=['is_active', 'date_deleted'])
+        
+        # Optional: Also soft delete related profile data
+        if hasattr(user, 'profile'):
+            user.profile.is_deleted = True  # Add this field to your Profile model
+            user.profile.save(update_fields=['is_deleted'])
+        
+        # Optional: Anonymize sensitive data for privacy compliance
+        # Uncomment these lines if you want to anonymize data immediately
+        # user.email = f"deleted_user_{user.id}@deleted.local"
+        # user.username = f"deleted_user_{user.id}"
+        # user.save(update_fields=['email', 'username'])
+        
+        return Response({
+            'success': True,
+            'message': 'Account has been successfully deleted'
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({
+            'success': False,
+            'message': 'Failed to delete account'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
