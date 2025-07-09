@@ -114,6 +114,52 @@ class PostCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Post is too long. Maximum 2200 characters.")
         
         return value.strip()
+    
+class PostUpdateSerializer(serializers.ModelSerializer):
+    """
+    Serializer for updating existing posts
+    Allows editing content and image
+    """
+    
+    class Meta:
+        model = Post
+        fields = ['content', 'image']
+        extra_kwargs = {
+            'content': {'required': False},  # Allow partial updates
+            'image': {'required': False},
+        }
+    
+    def validate_content(self, value):
+        """Validate post content"""
+        if value is not None:  # Only validate if content is being updated
+            if len(value.strip()) < 1:
+                raise serializers.ValidationError("Post content cannot be empty.")
+            
+            if len(value.strip()) > 2200:
+                raise serializers.ValidationError("Post is too long. Maximum 2200 characters.")
+            
+            return value.strip()
+        return value
+    
+    def update(self, instance, validated_data):
+        """Custom update method to handle image updates"""
+        # Update content if provided
+        if 'content' in validated_data:
+            instance.content = validated_data['content']
+        
+        # Handle image update
+        if 'image' in validated_data:
+            # Delete old image if replacing with new one
+            if instance.image and validated_data['image']:
+                instance.image.delete(save=False)
+            
+            instance.image = validated_data['image']
+        
+        # Update the updated_at timestamp
+        instance.updated_at = timezone.now()
+        instance.save()
+        
+        return instance
 
 
 class CommentSerializer(serializers.ModelSerializer):

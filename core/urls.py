@@ -1,3 +1,4 @@
+# UPDATED core/urls.py - ADD THESE NEW PATTERNS
 # core/urls.py - CLEAN VERSION WITHOUT STORIES
 from django.urls import path
 from . import views
@@ -15,6 +16,13 @@ urlpatterns = [
     
     # GET /api/posts/1/ - Get single post with details
     path('posts/<int:pk>/', views.PostDetailAPIView.as_view(), name='post-detail'),
+    
+    # 🆕 NEW: POST EDIT/DELETE ENDPOINTS
+    # PUT /api/posts/1/edit/ - Edit post (author only)
+    path('posts/<int:pk>/edit/', views.PostUpdateAPIView.as_view(), name='post-edit'),
+    
+    # DELETE /api/posts/1/delete/ - Delete post (author only)  
+    path('posts/<int:pk>/delete/', views.PostDeleteAPIView.as_view(), name='post-delete'),
     
     # ❤️ LIKE SYSTEM ENDPOINTS
     

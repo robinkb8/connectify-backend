@@ -13,6 +13,7 @@ from .serializers import (
     PostSerializer, 
     PostCreateSerializer, 
     PostDetailSerializer,
+    PostUpdateSerializer,
     CommentSerializer,
     CommentCreateSerializer
 )
@@ -141,6 +142,77 @@ def post_stats(request, post_id):
         'created_at': post.created_at,
         'is_active': post.is_active
     })
+
+class PostUpdateAPIView(generics.RetrieveUpdateAPIView):
+    """PUT /api/posts/1/edit/ - Update post (author only)"""
+    serializer_class = PostUpdateSerializer
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+    
+    def get_queryset(self):
+        """Get post with optimized queries"""
+        return Post.objects.select_related(
+            'author',
+            'author__profile'
+        )
+    
+    def perform_update(self, serializer):
+        """Update post (only by author)"""
+        post = self.get_object()
+        if post.author != self.request.user:
+            return Response({
+                'success': False,
+                'message': 'You can only edit your own posts'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Save the updated post
+        updated_post = serializer.save()
+        
+        return Response({
+            'success': True,
+            'message': 'Post updated successfully',
+            'post': PostSerializer(updated_post, context={'request': self.request}).data
+        })
+
+
+class PostDeleteAPIView(generics.DestroyAPIView):
+    """DELETE /api/posts/1/delete/ - Delete post (author only)"""
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        """Get post with optimized queries"""
+        return Post.objects.select_related('author')
+    
+    def perform_destroy(self, instance):
+        """Delete post (only by author)"""
+        if instance.author != self.request.user:
+            return Response({
+                'success': False,
+                'message': 'You can only delete your own posts'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Soft delete - mark as inactive instead of hard delete
+        instance.is_active = False
+        instance.save(update_fields=['is_active'])
+    
+    def destroy(self, request, *args, **kwargs):
+        """Custom destroy method with proper response"""
+        instance = self.get_object()
+        
+        # Check ownership
+        if instance.author != request.user:
+            return Response({
+                'success': False,
+                'message': 'You can only delete your own posts'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Perform soft delete
+        self.perform_destroy(instance)
+        
+        return Response({
+            'success': True,
+            'message': 'Post deleted successfully'
+        }, status=status.HTTP_200_OK)
 
 
 class PostCommentsListCreateAPIView(generics.ListCreateAPIView):
