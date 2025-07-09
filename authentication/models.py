@@ -57,13 +57,11 @@ class UserManager(BaseUserManager):
         
         return self.create_user(email, username, full_name, phone, password, **extra_fields)
 
-# Now your User class (add the objects = UserManager() line)
 class User(AbstractBaseUser, PermissionsMixin):
     """
     Custom User model that matches our React frontend form
     """
     
-    # ... all your existing fields stay the same ...
     email = models.EmailField(
         unique=True,
         max_length=254,
@@ -102,8 +100,11 @@ class User(AbstractBaseUser, PermissionsMixin):
     is_staff = models.BooleanField(default=False)
     date_joined = models.DateTimeField(auto_now_add=True)
     
-    # THIS IS THE IMPORTANT LINE TO ADD:
-    objects = UserManager()  # Tell Django to use our custom manager
+    # Pro subscription fields
+    is_pro = models.BooleanField(default=False)
+    pro_upgraded_at = models.DateTimeField(null=True, blank=True)
+    
+    objects = UserManager()
     
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['username', 'full_name', 'phone']
@@ -116,8 +117,23 @@ class User(AbstractBaseUser, PermissionsMixin):
     def __str__(self):
         return f"{self.username} ({self.email})"
     
+    def upgrade_to_pro(self):
+        """Upgrade user to pro status"""
+        self.is_pro = True
+        self.pro_upgraded_at = timezone.now()
+        self.save(update_fields=['is_pro', 'pro_upgraded_at'])
+    
+    def downgrade_from_pro(self):
+        """Downgrade user from pro status"""
+        self.is_pro = False
+        self.save(update_fields=['is_pro'])
+    
+    @property
+    def pro_status_display(self):
+        """Human readable pro status"""
+        return "Pro User" if self.is_pro else "Free User"
+
 class EmailOTP(models.Model):
-     # Store email OTP verification codes
     email = models.EmailField()
     otp_code = models.CharField(max_length=6)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -129,7 +145,6 @@ class EmailOTP(models.Model):
         ordering = ['-created_at']
     
     def save(self, *args, **kwargs):
-        # Set expiration to 10 minutes from creation
         if not self.expires_at:
             self.expires_at = timezone.now() + timedelta(minutes=10)
         super().save(*args, **kwargs)
