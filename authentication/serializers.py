@@ -2,6 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
 from .models import User
 
+
 class UserRegistrationSerializer(serializers.ModelSerializer):
     """
     Serializer for user registration
@@ -50,17 +51,64 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         user = User.objects.create_user(**validated_data)
         return user
 
+
+class UserProfileSerializer(serializers.Serializer):
+    """
+    Serializer for UserProfile data
+    """
+    bio = serializers.CharField(allow_blank=True)
+    avatar = serializers.SerializerMethodField()
+    website = serializers.URLField(allow_blank=True)
+    location = serializers.CharField(allow_blank=True)
+    is_private = serializers.BooleanField()
+    followers_count = serializers.IntegerField()
+    following_count = serializers.IntegerField()
+    posts_count = serializers.IntegerField()
+    
+    def get_avatar(self, profile):
+        """Get avatar URL or None"""
+        if profile.avatar:
+            return profile.avatar.url
+        return None
+
+
 class UserSerializer(serializers.ModelSerializer):
     """
-    Serializer for user data with pro status information
+    Serializer for user data with pro status and complete profile information
     """
     pro_status_display = serializers.ReadOnlyField()
+    profile = serializers.SerializerMethodField()
     
     class Meta:
         model = User
         fields = (
             'id', 'email', 'username', 'full_name', 'phone', 
             'is_active', 'date_joined', 'is_pro', 'pro_upgraded_at', 
-            'pro_status_display'
+            'pro_status_display', 'profile'
         )
         read_only_fields = ('id', 'date_joined', 'is_pro', 'pro_upgraded_at', 'pro_status_display')
+    
+    def get_profile(self, user):
+        """Get complete profile data"""
+        try:
+            if hasattr(user, 'profile'):
+                profile_serializer = UserProfileSerializer(user.profile)
+                return profile_serializer.data
+            else:
+                # Create profile if it doesn't exist
+                from core.models import UserProfile
+                profile, created = UserProfile.objects.get_or_create(user=user)
+                profile_serializer = UserProfileSerializer(profile)
+                return profile_serializer.data
+        except Exception as e:
+            # Fallback profile data structure
+            return {
+                'bio': '',
+                'avatar': None,
+                'website': '',
+                'location': '',
+                'is_private': False,
+                'followers_count': 0,
+                'following_count': 0,
+                'posts_count': 0,
+            }

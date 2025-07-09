@@ -248,6 +248,27 @@ def update_post_comments_on_delete(sender, instance, **kwargs):
     instance.post.total_comments = instance.post.comments.count()
     instance.post.save(update_fields=['total_comments'])
 
+@receiver(post_save, sender=Post)
+def update_user_posts_count_on_create(sender, instance, created, **kwargs):
+    """Update user's posts count when a post is created"""
+    if created:
+        # Ensure profile exists
+        if hasattr(instance.author, 'profile'):
+            # Recalculate posts count for the author
+            posts_count = Post.objects.filter(author=instance.author).count()
+            instance.author.profile.posts_count = posts_count
+            instance.author.profile.save(update_fields=['posts_count'])
+
+@receiver(post_delete, sender=Post)
+def update_user_posts_count_on_delete(sender, instance, **kwargs):
+    """Update user's posts count when a post is deleted"""
+    # Ensure profile exists
+    if hasattr(instance.author, 'profile'):
+        # Recalculate posts count for the author
+        posts_count = Post.objects.filter(author=instance.author).count()
+        instance.author.profile.posts_count = posts_count
+        instance.author.profile.save(update_fields=['posts_count'])
+
 @receiver(post_save, sender=Follow)
 def create_follow_notification(sender, instance, created, **kwargs):
     """Create notification when user follows another user"""
