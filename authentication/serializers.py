@@ -8,7 +8,6 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
     Converts JSON data from React frontend to Django User model
     """
     
-    # Password fields (write-only for security)
     password = serializers.CharField(
         write_only=True,
         min_length=8,
@@ -36,14 +35,11 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         password = attrs.get('password')
         confirm_password = attrs.get('confirm_password')
         
-        # Check if passwords match
         if password != confirm_password:
             raise serializers.ValidationError("Passwords do not match.")
         
-        # Use Django's built-in password validation
         validate_password(password)
         
-        # Remove confirm_password as it's not needed for user creation
         attrs.pop('confirm_password', None)
         return attrs
     
@@ -51,6 +47,20 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         """
         Create and return a new user instance
         """
-        # Use our custom UserManager to create user
         user = User.objects.create_user(**validated_data)
         return user
+
+class UserSerializer(serializers.ModelSerializer):
+    """
+    Serializer for user data with pro status information
+    """
+    pro_status_display = serializers.ReadOnlyField()
+    
+    class Meta:
+        model = User
+        fields = (
+            'id', 'email', 'username', 'full_name', 'phone', 
+            'is_active', 'date_joined', 'is_pro', 'pro_upgraded_at', 
+            'pro_status_display'
+        )
+        read_only_fields = ('id', 'date_joined', 'is_pro', 'pro_upgraded_at', 'pro_status_display')
