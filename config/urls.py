@@ -1,4 +1,4 @@
-# config/urls.py - UPDATED WITH MESSAGING ROUTES
+# config/urls.py - UPDATED WITH MESSAGING AND PAYMENTS ROUTES
 from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
@@ -16,10 +16,14 @@ urlpatterns = [
     # Core app routes (posts, likes, comments)
     path('api/', include('core.urls')),
     
-    # NEW: Messaging system routes
+    # Messaging system routes
     path('api/messaging/', include('messaging.urls')),
 
+    # Notifications system routes
     path('api/notifications/', include('notifications.urls')),
+    
+    # Payments system routes
+    path('api/payments/', include('payments.urls')),
 ]
 
 # ✅ Serve media files in development
