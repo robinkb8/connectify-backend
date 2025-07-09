@@ -9,6 +9,7 @@ This configuration supports:
 - AWS SES email integration
 - PostgreSQL database
 - CORS enabled for React development
+- Razorpay payment integration
 
 For production deployment, ensure to:
 - Set DEBUG = False
@@ -72,6 +73,7 @@ INSTALLED_APPS = [
     'authentication',              # User authentication and profiles
     'messaging',                   # Real-time messaging system
     'notifications',               # Push notifications system
+    'payments.apps.PaymentsConfig'                 # Razorpay payment integration
 ]
 
 # =============================================================================
@@ -230,6 +232,20 @@ SIMPLE_JWT = {
 }
 
 # =============================================================================
+# RAZORPAY CONFIGURATION
+# =============================================================================
+
+RAZORPAY_KEY_ID = config('RAZORPAY_KEY_ID', default='rzp_test_kgUSjYv0BpQTJA')
+RAZORPAY_KEY_SECRET = config('RAZORPAY_KEY_SECRET', default='x2ga0ePmzBaTDzOa8ifPKtyb')
+
+RAZORPAY_SETTINGS = {
+    'CURRENCY': 'INR',
+    'PAYMENT_TIMEOUT': 300,  # 5 minutes
+    'SUBSCRIPTION_AMOUNT': 1000,  # ₹10 in paise
+    'RECEIPT_PREFIX': 'connectify_',
+}
+
+# =============================================================================
 # CORS CONFIGURATION (React Frontend Communication)
 # =============================================================================
 
@@ -375,6 +391,11 @@ if DEBUG:
                 'propagate': False,
             },
             'messaging': {
+                'handlers': ['console'],
+                'level': 'DEBUG',
+                'propagate': False,
+            },
+            'payments': {
                 'handlers': ['console'],
                 'level': 'DEBUG',
                 'propagate': False,
