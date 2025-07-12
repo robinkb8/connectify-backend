@@ -1,4 +1,4 @@
-# messaging/consumers.py - COMPLETE WITH DEBUG AUTHENTICATION
+# messaging/consumers.py - SAFE WORKING VERSION (ROLLBACK)
 import json
 import uuid
 from channels.generic.websocket import AsyncWebsocketConsumer
@@ -17,8 +17,8 @@ User = get_user_model()
 
 class ChatConsumer(AsyncWebsocketConsumer):
     """
-    WebSocket consumer for real-time chat functionality
-    Handles message sending, receiving, and delivery status updates
+    SAFE VERSION: WebSocket consumer for real-time chat functionality
+    Simplified logic to ensure stable connections
     """
 
     async def connect(self):
@@ -30,21 +30,16 @@ class ChatConsumer(AsyncWebsocketConsumer):
         # Authenticate user from query parameters
         user = await self.get_user_from_token()
         if not user:
-            print("❌ DEBUG: Authentication failed, closing connection")
             await self.close(code=4001)  # Unauthorized
             return
         
         self.user = user
-        print(f"✅ DEBUG: User authenticated: {user.username}")
         
         # Verify user is participant in chat
         chat_participant = await self.verify_chat_participant()
         if not chat_participant:
-            print("❌ DEBUG: User not participant in chat, closing connection")
             await self.close(code=4003)  # Forbidden
             return
-        
-        print("✅ DEBUG: User is participant, joining chat group")
         
         # Join chat group
         await self.channel_layer.group_add(
@@ -54,8 +49,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
         
         # Accept WebSocket connection
         await self.accept()
-        
-        print("✅ DEBUG: WebSocket connection accepted")
         
         # Send connection confirmation
         await self.send(text_data=json.dumps({
@@ -238,48 +231,28 @@ class ChatConsumer(AsyncWebsocketConsumer):
     # Database operations
     @database_sync_to_async
     def get_user_from_token(self):
-        """Authenticate user from JWT token in query parameters - DEBUG VERSION"""
+        """Authenticate user from JWT token in query parameters"""
         try:
-            print("🔍 DEBUG: Starting WebSocket token authentication...")
-            
-            # Debug scope information
-            print(f"🔍 DEBUG: Scope keys: {list(self.scope.keys())}")
-            
             # Get token from query parameters
             query_string = self.scope.get('query_string', b'').decode()
-            print(f"🔍 DEBUG: Raw query string: '{query_string}'")
-            
             query_params = parse_qs(query_string)
-            print(f"🔍 DEBUG: Parsed query params: {query_params}")
-            
             token = query_params.get('token', [None])[0]
-            print(f"🔍 DEBUG: Extracted token: {token[:50] if token else 'None'}...")
             
             if not token:
-                print("❌ DEBUG: No token found in query parameters")
                 return None
             
             # Validate JWT token
-            print("🔍 DEBUG: Validating JWT token...")
             UntypedToken(token)
-            print("✅ DEBUG: Token validation passed")
             
             # Get user from token
-            print("🔍 DEBUG: Extracting user from token...")
             access_token = AccessToken(token)
             user_id = access_token['user_id']
-            print(f"✅ DEBUG: User ID extracted: {user_id}")
             
-            print("🔍 DEBUG: Retrieving user from database...")
-            user = User.objects.select_related('profile').get(id=user_id)
-            print(f"✅ DEBUG: User retrieved successfully: {user.username}")
-            
+            # Get user (basic version without complex select_related)
+            user = User.objects.get(id=user_id)
             return user
             
-        except Exception as e:
-            print(f"❌ DEBUG: Authentication failed: {type(e).__name__}: {e}")
-            import traceback
-            traceback.print_exc()
+        except Exception:
             return None
 
     @database_sync_to_async
@@ -319,10 +292,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 reply_to=reply_to
             )
             
-            # Update chat last activity
-            chat.last_activity = timezone.now()
-            chat.save(update_fields=['last_activity'])
-            
             return message
             
         except Exception as e:
@@ -330,17 +299,16 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def serialize_message(self, message):
-        """Serialize message for JSON response"""
+        """SAFE VERSION: Basic message serialization"""
         try:
-            # Get message with related data
+            # Get message with basic related data
             message = Message.objects.select_related(
                 'sender',
-                'sender__profile',
                 'reply_to',
                 'reply_to__sender'
             ).get(id=message.id)
             
-            # Create a mock request for serializer context
+            # Create a basic mock request for serializer context
             class MockRequest:
                 def __init__(self, user):
                     self.user = user
@@ -357,16 +325,17 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return serializer.data
             
         except Exception as e:
+            # Fallback for any serialization errors
             return {
                 'id': str(message.id),
                 'content': message.content,
                 'sender': {
                     'id': message.sender.id,
                     'username': message.sender.username,
-                    'full_name': message.sender.full_name
+                    'full_name': getattr(message.sender, 'full_name', message.sender.username)
                 },
                 'created_at': message.created_at.isoformat(),
-                'error': f'Serialization error: {str(e)}'
+                'error': f'Serialization fallback: {str(e)}'
             }
 
     @database_sync_to_async

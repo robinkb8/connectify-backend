@@ -1,4 +1,4 @@
-# messaging/views.py - COMPLETE MESSAGING API VIEWS (FIXED)
+# messaging/views.py - SAFE WORKING VERSION (ROLLBACK)
 from rest_framework import generics, status, permissions
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
@@ -24,6 +24,7 @@ User = get_user_model()
 
 class ChatListCreateAPIView(generics.ListCreateAPIView):
     """
+    SAFE VERSION: Basic chat list without complex optimizations
     GET /api/messaging/chats/ - List user's chats
     POST /api/messaging/chats/ - Create new chat
     """
@@ -36,7 +37,7 @@ class ChatListCreateAPIView(generics.ListCreateAPIView):
         return ChatSerializer
     
     def get_queryset(self):
-        """Get chats for current user, ordered by last activity"""
+        """SAFE VERSION: Basic query without complex prefetch optimizations"""
         user = self.request.user
         
         return Chat.objects.filter(
@@ -45,32 +46,15 @@ class ChatListCreateAPIView(generics.ListCreateAPIView):
             'last_message',
             'last_message__sender'
         ).prefetch_related(
-            'participants',
-            'participants__profile'
-        ).annotate(
-            # Add unread count annotation for optimization
-            unread_count=Count(
-                'messages__status_records',
-                filter=Q(
-                    messages__status_records__user=user,
-                    messages__status_records__status__in=['sent', 'delivered']
-                )
-            )
+            'participants'
         ).order_by('-last_activity')
     
     def create(self, request, *args, **kwargs):
-        """
-        FIXED: Handle chat creation with proper response serialization
-        Use ChatCreateSerializer for input, ChatSerializer for output
-        """
-        # Use ChatCreateSerializer for input validation
+        """Handle chat creation with proper response serialization"""
         serializer = ChatCreateSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         
-        # Create the chat using existing perform_create logic
         chat = self.perform_create(serializer)
-        
-        # Use ChatSerializer for output response to include all fields (id, participants, etc.)
         output_serializer = ChatSerializer(chat, context={'request': request})
         
         return Response(output_serializer.data, status=status.HTTP_201_CREATED)
@@ -79,11 +63,9 @@ class ChatListCreateAPIView(generics.ListCreateAPIView):
         """Create chat and handle participant validation"""
         chat = serializer.save()
         
-        # Check for existing direct message chat
         if not chat.is_group_chat:
             other_participant = chat.participants.exclude(id=self.request.user.id).first()
             
-            # Check if direct chat already exists between these users
             existing_chat = Chat.objects.filter(
                 is_group_chat=False,
                 participants=self.request.user
@@ -92,7 +74,6 @@ class ChatListCreateAPIView(generics.ListCreateAPIView):
             ).exclude(id=chat.id).first()
             
             if existing_chat:
-                # Delete the newly created chat and return existing one
                 chat.delete()
                 return existing_chat
         
@@ -101,6 +82,7 @@ class ChatListCreateAPIView(generics.ListCreateAPIView):
 
 class ChatDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
     """
+    SAFE VERSION: Basic chat detail
     GET /api/messaging/chats/{id}/ - Get chat details with recent messages
     PUT /api/messaging/chats/{id}/ - Update chat (name, etc.)
     DELETE /api/messaging/chats/{id}/ - Leave/delete chat
@@ -110,24 +92,20 @@ class ChatDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
     lookup_field = 'pk'
     
     def get_queryset(self):
-        """Get chats user participates in"""
+        """SAFE VERSION: Basic queryset"""
         return Chat.objects.filter(
             participants=self.request.user
         ).select_related(
             'last_message',
             'last_message__sender'
         ).prefetch_related(
-            'participants',
-            'participants__profile',
-            'messages__sender',
-            'messages__sender__profile'
+            'participants'
         )
     
     def perform_update(self, serializer):
         """Update chat (only group chat names for now)"""
         chat = self.get_object()
         
-        # Only allow updating group chat names
         if chat.is_group_chat:
             serializer.save()
         else:
@@ -140,20 +118,18 @@ class ChatDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
         """Leave chat or delete if last participant"""
         user = self.request.user
         
-        # Remove user from chat
         instance.participants.remove(user)
         
-        # If no participants left, delete the chat
         if instance.participants.count() == 0:
             instance.delete()
         else:
-            # Update last activity
             instance.last_activity = timezone.now()
             instance.save()
 
 
 class ChatMessagesListCreateAPIView(generics.ListCreateAPIView):
     """
+    SAFE VERSION: Basic messages API
     GET /api/messaging/chats/{id}/messages/ - Get message history (paginated)
     POST /api/messaging/chats/{id}/messages/ - Send new message
     """
@@ -168,10 +144,9 @@ class ChatMessagesListCreateAPIView(generics.ListCreateAPIView):
         return MessageSerializer
     
     def get_queryset(self):
-        """Get messages for specific chat"""
+        """SAFE VERSION: Basic message queryset"""
         chat_id = self.kwargs['chat_id']
         
-        # Verify user is participant in chat
         chat = get_object_or_404(
             Chat.objects.filter(participants=self.request.user),
             id=chat_id
@@ -182,36 +157,30 @@ class ChatMessagesListCreateAPIView(generics.ListCreateAPIView):
             is_deleted=False
         ).select_related(
             'sender',
-            'sender__profile',
             'reply_to',
             'reply_to__sender'
-        ).order_by('-created_at')  # Newest first for pagination
+        ).order_by('-created_at')
     
     def perform_create(self, serializer):
         """Send new message to chat"""
         chat_id = self.kwargs['chat_id']
         
-        # Get chat and verify participation
         chat = get_object_or_404(
             Chat.objects.filter(participants=self.request.user),
             id=chat_id
         )
         
-        # Create message
         message = serializer.save(
             chat=chat,
             sender=self.request.user
         )
-        
-        # Update chat's last activity
-        chat.last_activity = timezone.now()
-        chat.save(update_fields=['last_activity'])
         
         return message
 
 
 class MessageDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
     """
+    SAFE VERSION: Basic message detail
     GET /api/messaging/messages/{id}/ - Get message details
     PUT /api/messaging/messages/{id}/ - Edit message (sender only)
     DELETE /api/messaging/messages/{id}/ - Delete message (sender only)
@@ -221,13 +190,11 @@ class MessageDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
     lookup_field = 'pk'
     
     def get_queryset(self):
-        """Get messages user can access"""
-        # User can access messages from chats they participate in
+        """SAFE VERSION: Basic queryset"""
         return Message.objects.filter(
             chat__participants=self.request.user
         ).select_related(
             'sender',
-            'sender__profile',
             'chat'
         )
     
@@ -247,7 +214,6 @@ class MessageDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
                 'message': 'You can only edit your own messages'
             }, status=status.HTTP_403_FORBIDDEN)
         
-        # Mark as edited
         serializer.save()
         message.mark_as_edited()
     
@@ -259,37 +225,31 @@ class MessageDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
                 'message': 'You can only delete your own messages'
             }, status=status.HTTP_403_FORBIDDEN)
         
-        # Soft delete
         instance.soft_delete()
 
 
+# Keep all other API endpoints unchanged...
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def mark_message_read(request, message_id):
-    """
-    POST /api/messaging/messages/{id}/read/ - Mark message as read
-    """
+    """Mark message as read"""
     try:
-        # Get message from a chat user participates in
         message = get_object_or_404(
             Message.objects.filter(chat__participants=request.user),
             id=message_id
         )
         
-        # Can't mark own messages as read
         if message.sender == request.user:
             return Response({
                 'success': False,
                 'message': 'Cannot mark your own message as read'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Get or create message status
         status_record, created = MessageStatus.objects.get_or_create(
             message=message,
             user=request.user
         )
         
-        # Mark as read
         status_record.mark_read()
         
         return Response({
@@ -308,30 +268,24 @@ def mark_message_read(request, message_id):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def mark_message_delivered(request, message_id):
-    """
-    POST /api/messaging/messages/{id}/delivered/ - Mark message as delivered
-    """
+    """Mark message as delivered"""
     try:
-        # Get message from a chat user participates in
         message = get_object_or_404(
             Message.objects.filter(chat__participants=request.user),
             id=message_id
         )
         
-        # Can't mark own messages as delivered
         if message.sender == request.user:
             return Response({
                 'success': False,
                 'message': 'Cannot mark your own message as delivered'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Get or create message status
         status_record, created = MessageStatus.objects.get_or_create(
             message=message,
             user=request.user
         )
         
-        # Mark as delivered
         status_record.mark_delivered()
         
         return Response({
@@ -348,9 +302,7 @@ def mark_message_delivered(request, message_id):
 
 
 class SearchUsersAPIView(generics.ListAPIView):
-    """
-    GET /api/messaging/search/users/?q=john - Search users to start chat with
-    """
+    """Search users to start chat with"""
     serializer_class = ChatParticipantSerializer
     permission_classes = [IsAuthenticated]
     
@@ -361,22 +313,18 @@ class SearchUsersAPIView(generics.ListAPIView):
         if not query or len(query) < 2:
             return User.objects.none()
         
-        # Exclude current user from results
         queryset = User.objects.exclude(
             id=self.request.user.id
         ).filter(
             Q(username__icontains=query) |
             Q(full_name__icontains=query)
-        ).select_related('profile')
+        )
         
-        # Limit results
         return queryset[:20]
 
 
 class ChatParticipantsAPIView(generics.ListAPIView):
-    """
-    GET /api/messaging/chats/{id}/participants/ - List chat participants
-    """
+    """List chat participants"""
     serializer_class = ChatParticipantSerializer
     permission_classes = [IsAuthenticated]
     
@@ -384,48 +332,39 @@ class ChatParticipantsAPIView(generics.ListAPIView):
         """Get participants of specific chat"""
         chat_id = self.kwargs['chat_id']
         
-        # Verify user is participant in chat
         chat = get_object_or_404(
             Chat.objects.filter(participants=self.request.user),
             id=chat_id
         )
         
-        return chat.participants.select_related('profile')
+        return chat.participants.all()
 
 
 @api_view(['POST', 'DELETE'])
 @permission_classes([IsAuthenticated])
 def manage_chat_participant(request, chat_id, user_id):
-    """
-    POST /api/messaging/chats/{id}/participants/{user_id}/ - Add participant
-    DELETE /api/messaging/chats/{id}/participants/{user_id}/ - Remove participant
-    """
+    """Add/remove chat participants"""
     try:
-        # Get chat user participates in
         chat = get_object_or_404(
             Chat.objects.filter(participants=request.user),
             id=chat_id
         )
         
-        # Get user to add/remove
         target_user = get_object_or_404(User, id=user_id)
         
         if request.method == 'POST':
-            # Add participant (only for group chats)
             if not chat.is_group_chat:
                 return Response({
                     'success': False,
                     'message': 'Cannot add participants to direct messages'
                 }, status=status.HTTP_400_BAD_REQUEST)
             
-            # Check if already participant
             if chat.participants.filter(id=user_id).exists():
                 return Response({
                     'success': False,
                     'message': 'User is already a participant'
                 }, status=status.HTTP_400_BAD_REQUEST)
             
-            # Add participant
             chat.add_participant(target_user)
             
             return Response({
@@ -434,21 +373,18 @@ def manage_chat_participant(request, chat_id, user_id):
             })
             
         elif request.method == 'DELETE':
-            # Remove participant
             if not chat.participants.filter(id=user_id).exists():
                 return Response({
                     'success': False,
                     'message': 'User is not a participant'
                 }, status=status.HTTP_400_BAD_REQUEST)
             
-            # Can't remove yourself using this endpoint
             if target_user == request.user:
                 return Response({
                     'success': False,
                     'message': 'Use chat delete endpoint to leave chat'
                 }, status=status.HTTP_400_BAD_REQUEST)
             
-            # Remove participant
             chat.remove_participant(target_user)
             
             return Response({
@@ -461,6 +397,3 @@ def manage_chat_participant(request, chat_id, user_id):
             'success': False,
             'message': f'Error managing participant: {str(e)}'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-# Function views are used directly in URLs without .as_view()

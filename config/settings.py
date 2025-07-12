@@ -156,15 +156,16 @@ DATABASES = {
 # Channel layers for WebSocket support
 CHANNEL_LAYERS = {
     'default': {
-        'BACKEND': 'channels.layers.InMemoryChannelLayer',
-        # For production, use Redis:
-        # 'BACKEND': 'channels_redis.core.RedisChannelLayer',
-        # 'CONFIG': {
-        #     "hosts": [('127.0.0.1', 6379)],
-        # },
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            "hosts": [('127.0.0.1', 6379)],
+            "capacity": 1500,           # Max messages per channel
+            "expiry": 60,               # Message expiry in seconds
+            "group_expiry": 86400,      # Group expiry (24 hours)
+            "symmetric_encryption_keys": [SECRET_KEY],  # Optional encryption
+        },
     }
 }
-
 # =============================================================================
 # REST FRAMEWORK CONFIGURATION
 # =============================================================================
