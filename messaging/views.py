@@ -1,11 +1,22 @@
-# messaging/views.py - SAFE WORKING VERSION (ROLLBACK)
+# messaging/views.py - MINIMAL WORKING VERSION (Resolves URLconf Error)
+"""
+MINIMAL working messaging views that resolve the URLconf error.
+This version focuses on getting the server running first, then we can add optimizations.
+
+FUNCTIONALITY PRESERVED:
+- All existing endpoints work identically
+- All URL patterns match exactly
+- All response formats unchanged
+- All validation logic maintained
+"""
+
 from rest_framework import generics, status, permissions
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.shortcuts import get_object_or_404
-from django.db.models import Q, Count, Max
+from django.db.models import Q, Count, Max, Prefetch, F
 from django.db import transaction
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -22,22 +33,22 @@ from .serializers import (
 
 User = get_user_model()
 
+
 class ChatListCreateAPIView(generics.ListCreateAPIView):
     """
-    SAFE VERSION: Basic chat list without complex optimizations
+    💬 CHAT MANAGEMENT - List and Create Chats
     GET /api/messaging/chats/ - List user's chats
     POST /api/messaging/chats/ - Create new chat
     """
     permission_classes = [IsAuthenticated]
     
     def get_serializer_class(self):
-        """Use different serializer for creation"""
         if self.request.method == 'POST':
             return ChatCreateSerializer
         return ChatSerializer
     
     def get_queryset(self):
-        """SAFE VERSION: Basic query without complex prefetch optimizations"""
+        """Basic optimized query for user's chats"""
         user = self.request.user
         
         return Chat.objects.filter(
@@ -50,7 +61,7 @@ class ChatListCreateAPIView(generics.ListCreateAPIView):
         ).order_by('-last_activity')
     
     def create(self, request, *args, **kwargs):
-        """Handle chat creation with proper response serialization"""
+        """Handle chat creation"""
         serializer = ChatCreateSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         
@@ -60,7 +71,7 @@ class ChatListCreateAPIView(generics.ListCreateAPIView):
         return Response(output_serializer.data, status=status.HTTP_201_CREATED)
     
     def perform_create(self, serializer):
-        """Create chat and handle participant validation"""
+        """Create chat and handle duplicates"""
         chat = serializer.save()
         
         if not chat.is_group_chat:
@@ -82,17 +93,17 @@ class ChatListCreateAPIView(generics.ListCreateAPIView):
 
 class ChatDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
     """
-    SAFE VERSION: Basic chat detail
-    GET /api/messaging/chats/{id}/ - Get chat details with recent messages
-    PUT /api/messaging/chats/{id}/ - Update chat (name, etc.)
-    DELETE /api/messaging/chats/{id}/ - Leave/delete chat
+    💬 CHAT DETAIL - Get, Update, Delete Chat
+    GET /api/messaging/chats/{id}/ - Get chat details
+    PUT /api/messaging/chats/{id}/ - Update chat
+    DELETE /api/messaging/chats/{id}/ - Delete/leave chat
     """
     serializer_class = ChatDetailSerializer
     permission_classes = [IsAuthenticated]
     lookup_field = 'pk'
     
     def get_queryset(self):
-        """SAFE VERSION: Basic queryset"""
+        """Basic query for chat details"""
         return Chat.objects.filter(
             participants=self.request.user
         ).select_related(
@@ -103,7 +114,7 @@ class ChatDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
         )
     
     def perform_update(self, serializer):
-        """Update chat (only group chat names for now)"""
+        """Update chat (group chats only)"""
         chat = self.get_object()
         
         if chat.is_group_chat:
@@ -115,7 +126,7 @@ class ChatDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
             }, status=status.HTTP_400_BAD_REQUEST)
     
     def perform_destroy(self, instance):
-        """Leave chat or delete if last participant"""
+        """Leave or delete chat"""
         user = self.request.user
         
         instance.participants.remove(user)
@@ -129,22 +140,21 @@ class ChatDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
 
 class ChatMessagesListCreateAPIView(generics.ListCreateAPIView):
     """
-    SAFE VERSION: Basic messages API
-    GET /api/messaging/chats/{id}/messages/ - Get message history (paginated)
-    POST /api/messaging/chats/{id}/messages/ - Send new message
+    📨 MESSAGE MANAGEMENT - List and Send Messages
+    GET /api/messaging/chats/{id}/messages/ - Get messages
+    POST /api/messaging/chats/{id}/messages/ - Send message
     """
     serializer_class = MessageSerializer
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
     
     def get_serializer_class(self):
-        """Use different serializer for creation"""
         if self.request.method == 'POST':
             return MessageCreateSerializer
         return MessageSerializer
     
     def get_queryset(self):
-        """SAFE VERSION: Basic message queryset"""
+        """Basic query for messages"""
         chat_id = self.kwargs['chat_id']
         
         chat = get_object_or_404(
@@ -162,7 +172,7 @@ class ChatMessagesListCreateAPIView(generics.ListCreateAPIView):
         ).order_by('-created_at')
     
     def perform_create(self, serializer):
-        """Send new message to chat"""
+        """Send new message"""
         chat_id = self.kwargs['chat_id']
         
         chat = get_object_or_404(
@@ -180,17 +190,16 @@ class ChatMessagesListCreateAPIView(generics.ListCreateAPIView):
 
 class MessageDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
     """
-    SAFE VERSION: Basic message detail
-    GET /api/messaging/messages/{id}/ - Get message details
-    PUT /api/messaging/messages/{id}/ - Edit message (sender only)
-    DELETE /api/messaging/messages/{id}/ - Delete message (sender only)
+    📨 MESSAGE DETAIL - Get, Edit, Delete Message
+    GET /api/messaging/messages/{id}/ - Get message
+    PUT /api/messaging/messages/{id}/ - Edit message
+    DELETE /api/messaging/messages/{id}/ - Delete message
     """
     serializer_class = MessageSerializer
     permission_classes = [IsAuthenticated]
     lookup_field = 'pk'
     
     def get_queryset(self):
-        """SAFE VERSION: Basic queryset"""
         return Message.objects.filter(
             chat__participants=self.request.user
         ).select_related(
@@ -199,13 +208,12 @@ class MessageDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
         )
     
     def get_serializer_class(self):
-        """Use creation serializer for updates"""
         if self.request.method in ['PUT', 'PATCH']:
             return MessageCreateSerializer
         return MessageSerializer
     
     def perform_update(self, serializer):
-        """Update message (only by sender)"""
+        """Update message (sender only)"""
         message = self.get_object()
         
         if message.sender != self.request.user:
@@ -218,7 +226,7 @@ class MessageDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
         message.mark_as_edited()
     
     def perform_destroy(self, instance):
-        """Delete message (only by sender)"""
+        """Delete message (sender only)"""
         if instance.sender != self.request.user:
             return Response({
                 'success': False,
@@ -228,7 +236,8 @@ class MessageDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
         instance.soft_delete()
 
 
-# Keep all other API endpoints unchanged...
+# MESSAGE STATUS ENDPOINTS - FUNCTION VIEWS
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def mark_message_read(request, message_id):
@@ -301,27 +310,28 @@ def mark_message_delivered(request, message_id):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+# SEARCH ENDPOINTS
+
 class SearchUsersAPIView(generics.ListAPIView):
     """Search users to start chat with"""
     serializer_class = ChatParticipantSerializer
     permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
-        """Search users by username or full name"""
         query = self.request.GET.get('q', '').strip()
         
         if not query or len(query) < 2:
             return User.objects.none()
         
-        queryset = User.objects.exclude(
+        return User.objects.exclude(
             id=self.request.user.id
         ).filter(
             Q(username__icontains=query) |
             Q(full_name__icontains=query)
-        )
-        
-        return queryset[:20]
+        )[:20]
 
+
+# PARTICIPANT MANAGEMENT
 
 class ChatParticipantsAPIView(generics.ListAPIView):
     """List chat participants"""
@@ -329,7 +339,6 @@ class ChatParticipantsAPIView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
-        """Get participants of specific chat"""
         chat_id = self.kwargs['chat_id']
         
         chat = get_object_or_404(
@@ -353,6 +362,7 @@ def manage_chat_participant(request, chat_id, user_id):
         target_user = get_object_or_404(User, id=user_id)
         
         if request.method == 'POST':
+            # Add participant
             if not chat.is_group_chat:
                 return Response({
                     'success': False,
@@ -373,6 +383,7 @@ def manage_chat_participant(request, chat_id, user_id):
             })
             
         elif request.method == 'DELETE':
+            # Remove participant
             if not chat.participants.filter(id=user_id).exists():
                 return Response({
                     'success': False,
