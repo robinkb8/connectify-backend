@@ -3,16 +3,11 @@ import json
 import uuid
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
-from django.contrib.auth import get_user_model
 from django.utils import timezone
-from rest_framework_simplejwt.tokens import UntypedToken, AccessToken
-from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from urllib.parse import parse_qs
 
 from .models import Chat, Message, MessageStatus
 from .serializers import MessageSerializer
-
-User = get_user_model()
 
 
 class ChatConsumer(AsyncWebsocketConsumer):
@@ -233,6 +228,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
     def get_user_from_token(self):
         """Authenticate user from JWT token in query parameters"""
         try:
+            # Lazy imports to prevent apps loading error
+            from rest_framework_simplejwt.tokens import UntypedToken, AccessToken
+            from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+            from django.contrib.auth import get_user_model
+            
+            User = get_user_model()
+            
             # Get token from query parameters
             query_string = self.scope.get('query_string', b'').decode()
             query_params = parse_qs(query_string)

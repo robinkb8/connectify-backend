@@ -8,19 +8,23 @@ session-based authentication for regular HTTP requests.
 
 PROBLEM SOLVED: WebSocket connections closing after handshake due to
 AuthMiddlewareStack expecting session auth instead of JWT tokens.
+
+COMPLETE LAZY IMPORT FIX: Moved ALL Django/JWT imports inside functions 
+to prevent "Apps aren't loaded yet" error during ASGI server startup.
 """
 
 from channels.middleware import BaseMiddleware
 from channels.db import database_sync_to_async
-from django.contrib.auth import get_user_model
-from django.contrib.auth.models import AnonymousUser
-from rest_framework_simplejwt.tokens import AccessToken
-from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from urllib.parse import parse_qs
 import logging
 
-User = get_user_model()
 logger = logging.getLogger(__name__)
+
+
+def get_anonymous_user():
+    """Lazy import of AnonymousUser to prevent apps loading error"""
+    from django.contrib.auth.models import AnonymousUser
+    return AnonymousUser()
 
 
 class JWTAuthMiddleware(BaseMiddleware):
@@ -59,14 +63,14 @@ class JWTAuthMiddleware(BaseMiddleware):
                     scope['user'] = user
                 else:
                     logger.warning("❌ JWT WebSocket authentication failed: Invalid token")
-                    scope['user'] = AnonymousUser()
+                    scope['user'] = get_anonymous_user()
             else:
                 logger.warning("❌ JWT WebSocket authentication failed: No token provided")
-                scope['user'] = AnonymousUser()
+                scope['user'] = get_anonymous_user()
 
         except Exception as e:
             logger.error(f"❌ JWT WebSocket authentication error: {str(e)}")
-            scope['user'] = AnonymousUser()
+            scope['user'] = get_anonymous_user()
 
         # Continue to the next middleware/consumer
         return await super().__call__(scope, receive, send)
@@ -83,6 +87,13 @@ class JWTAuthMiddleware(BaseMiddleware):
             User: Authenticated user object or None if invalid
         """
         try:
+            # Lazy imports to prevent apps loading error
+            from rest_framework_simplejwt.tokens import AccessToken
+            from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+            from django.contrib.auth import get_user_model
+            
+            User = get_user_model()
+            
             # Validate and decode JWT token
             access_token = AccessToken(token)
             user_id = access_token['user_id']
@@ -153,7 +164,7 @@ class HybridAuthMiddleware(BaseMiddleware):
                     scope['user'] = user
                 else:
                     logger.warning("❌ JWT WebSocket authentication failed: Invalid token")
-                    scope['user'] = AnonymousUser()
+                    scope['user'] = get_anonymous_user()
             else:
                 # Fall back to session authentication
                 logger.info("🔄 No JWT token provided, attempting session authentication")
@@ -164,7 +175,7 @@ class HybridAuthMiddleware(BaseMiddleware):
 
         except Exception as e:
             logger.error(f"❌ Hybrid WebSocket authentication error: {str(e)}")
-            scope['user'] = AnonymousUser()
+            scope['user'] = get_anonymous_user()
 
         return await super().__call__(scope, receive, send)
 
@@ -172,6 +183,13 @@ class HybridAuthMiddleware(BaseMiddleware):
     def get_user_from_jwt_token(self, token):
         """Same JWT validation as JWTAuthMiddleware"""
         try:
+            # Lazy imports to prevent apps loading error
+            from rest_framework_simplejwt.tokens import AccessToken
+            from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+            from django.contrib.auth import get_user_model
+            
+            User = get_user_model()
+            
             access_token = AccessToken(token)
             user_id = access_token['user_id']
             user = User.objects.select_related('profile').get(id=user_id)
